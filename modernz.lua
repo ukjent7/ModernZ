@@ -118,6 +118,7 @@ local user_opts = {
     loop_button = true,                    -- show file loop button
     shuffle_button = false,                -- show shuffle button
     speed_button = true,                   -- show speed control button
+    speed_presets = "0.5,0.75,1.0,1.25,1.5,2.0,3.0", -- speed preset values for the speed menu
 
     buttons_always_active = "none",        -- force buttons to always be active. can add: playlist_prev, playlist_next
 
@@ -633,6 +634,7 @@ local state = {
     eof_reached = false,
     ontop = false,
     speed = 1,
+    speed_menu_open = false,
     file_loop = false,
     shuffled = false,
     sliderpos = 0,
@@ -656,27 +658,27 @@ local state = {
 
 local logo_lines = {
     -- White border
-    "{\\c&HE5E5E5&\\p6}m 895 10 b 401 10 0 410 0 905 0 1399 401 1800 895 1800 1390 1800 1790 1399 1790 905 1790 410 1390 10 895 10 {\\p0}",
+    "{\\1c&HE5E5E5&\\p6}m 895 10 b 401 10 0 410 0 905 0 1399 401 1800 895 1800 1390 1800 1790 1399 1790 905 1790 410 1390 10 895 10 {\\p0}",
     -- Purple fill
-    "{\\c&H682167&\\p6}m 925 42 b 463 42 87 418 87 880 87 1343 463 1718 925 1718 1388 1718 1763 1343 1763 880 1763 418 1388 42 925 42{\\p0}",
+    "{\\1c&H682167&\\p6}m 925 42 b 463 42 87 418 87 880 87 1343 463 1718 925 1718 1388 1718 1763 1343 1763 880 1763 418 1388 42 925 42{\\p0}",
     -- Darker fill
-    "{\\c&H430142&\\p6}m 1605 828 b 1605 1175 1324 1456 977 1456 631 1456 349 1175 349 828 349 482 631 200 977 200 1324 200 1605 482 1605 828{\\p0}",
+    "{\\1c&H430142&\\p6}m 1605 828 b 1605 1175 1324 1456 977 1456 631 1456 349 1175 349 828 349 482 631 200 977 200 1324 200 1605 482 1605 828{\\p0}",
     -- White fill
-    "{\\c&HDDDBDD&\\p6}m 1296 910 b 1296 1131 1117 1310 897 1310 676 1310 497 1131 497 910 497 689 676 511 897 511 1117 511 1296 689 1296 910{\\p0}",
+    "{\\1c&HDDDBDD&\\p6}m 1296 910 b 1296 1131 1117 1310 897 1310 676 1310 497 1131 497 910 497 689 676 511 897 511 1117 511 1296 689 1296 910{\\p0}",
     -- Triangle
-    "{\\c&H691F69&\\p6}m 762 1113 l 762 708 b 881 776 1000 843 1119 911 1000 978 881 1046 762 1113{\\p0}",
+    "{\\1c&H691F69&\\p6}m 762 1113 l 762 708 b 881 776 1000 843 1119 911 1000 978 881 1046 762 1113{\\p0}",
 }
 
 local santa_hat_lines = {
     -- Pompoms
-    "{\\c&HC0C0C0&\\p6}m 500 -323 b 491 -322 481 -318 475 -311 465 -312 456 -319 446 -318 434 -314 427 -304 417 -297 410 -290 404 -282 395 -278 390 -274 387 -267 381 -265 377 -261 379 -254 384 -253 397 -244 409 -232 425 -228 437 -228 446 -218 457 -217 462 -216 466 -213 468 -209 471 -205 477 -203 482 -206 491 -211 499 -217 508 -222 532 -235 556 -249 576 -267 584 -272 584 -284 578 -290 569 -305 550 -312 533 -309 523 -310 515 -316 507 -321 505 -323 503 -323 500 -323{\\p0}",
-    "{\\c&HE0E0E0&\\p6}m 315 -260 b 286 -258 259 -240 246 -215 235 -210 222 -215 211 -211 204 -188 177 -176 172 -151 170 -139 163 -128 154 -121 143 -103 141 -81 143 -60 139 -46 125 -34 129 -17 132 -1 134 16 142 30 145 56 161 80 181 96 196 114 210 133 231 144 266 153 303 138 328 115 373 79 401 28 423 -24 446 -73 465 -123 483 -174 487 -199 467 -225 442 -227 421 -232 402 -242 384 -254 364 -259 342 -250 322 -260 320 -260 317 -261 315 -260{\\p0}",
+    "{\\1c&HC0C0C0&\\p6}m 500 -323 b 491 -322 481 -318 475 -311 465 -312 456 -319 446 -318 434 -314 427 -304 417 -297 410 -290 404 -282 395 -278 390 -274 387 -267 381 -265 377 -261 379 -254 384 -253 397 -244 409 -232 425 -228 437 -228 446 -218 457 -217 462 -216 466 -213 468 -209 471 -205 477 -203 482 -206 491 -211 499 -217 508 -222 532 -235 556 -249 576 -267 584 -272 584 -284 578 -290 569 -305 550 -312 533 -309 523 -310 515 -316 507 -321 505 -323 503 -323 500 -323{\\p0}",
+    "{\\1c&HE0E0E0&\\p6}m 315 -260 b 286 -258 259 -240 246 -215 235 -210 222 -215 211 -211 204 -188 177 -176 172 -151 170 -139 163 -128 154 -121 143 -103 141 -81 143 -60 139 -46 125 -34 129 -17 132 -1 134 16 142 30 145 56 161 80 181 96 196 114 210 133 231 144 266 153 303 138 328 115 373 79 401 28 423 -24 446 -73 465 -123 483 -174 487 -199 467 -225 442 -227 421 -232 402 -242 384 -254 364 -259 342 -250 322 -260 320 -260 317 -261 315 -260{\\p0}",
     -- Main cap
-    "{\\c&H0000F0&\\p6}m 1151 -523 b 1016 -516 891 -458 769 -406 693 -369 624 -319 561 -262 526 -252 465 -235 479 -187 502 -147 551 -135 588 -111 1115 165 1379 232 1909 761 1926 800 1952 834 1987 858 2020 883 2053 912 2065 952 2088 1000 2146 962 2139 919 2162 836 2156 747 2143 662 2131 615 2116 567 2122 517 2120 410 2090 306 2089 199 2092 147 2071 99 2034 64 1987 5 1928 -41 1869 -86 1777 -157 1712 -256 1629 -337 1578 -389 1521 -436 1461 -476 1407 -509 1343 -507 1284 -515 1240 -519 1195 -521 1151 -523{\\p0}",
+    "{\\1c&H0000F0&\\p6}m 1151 -523 b 1016 -516 891 -458 769 -406 693 -369 624 -319 561 -262 526 -252 465 -235 479 -187 502 -147 551 -135 588 -111 1115 165 1379 232 1909 761 1926 800 1952 834 1987 858 2020 883 2053 912 2065 952 2088 1000 2146 962 2139 919 2162 836 2156 747 2143 662 2131 615 2116 567 2122 517 2120 410 2090 306 2089 199 2092 147 2071 99 2034 64 1987 5 1928 -41 1869 -86 1777 -157 1712 -256 1629 -337 1578 -389 1521 -436 1461 -476 1407 -509 1343 -507 1284 -515 1240 -519 1195 -521 1151 -523{\\p0}",
     -- Cap shadow
-    "{\\c&H0000AA&\\p6}m 1657 248 b 1658 254 1659 261 1660 267 1669 276 1680 284 1689 293 1695 302 1700 311 1707 320 1716 325 1726 330 1735 335 1744 347 1752 360 1761 371 1753 352 1754 331 1753 311 1751 237 1751 163 1751 90 1752 64 1752 37 1767 14 1778 -3 1785 -24 1786 -45 1786 -60 1786 -77 1774 -87 1760 -96 1750 -78 1751 -65 1748 -37 1750 -8 1750 20 1734 78 1715 134 1699 192 1694 211 1689 231 1676 246 1671 251 1661 255 1657 248 m 1909 541 b 1914 542 1922 549 1917 539 1919 520 1921 502 1919 483 1918 458 1917 433 1915 407 1930 373 1942 338 1947 301 1952 270 1954 238 1951 207 1946 214 1947 229 1945 239 1939 278 1936 318 1924 356 1923 362 1913 382 1912 364 1906 301 1904 237 1891 175 1887 150 1892 126 1892 101 1892 68 1893 35 1888 2 1884 -9 1871 -20 1859 -14 1851 -6 1854 9 1854 20 1855 58 1864 95 1873 132 1883 179 1894 225 1899 273 1908 362 1910 451 1909 541{\\p0}",
+    "{\\1c&H0000AA&\\p6}m 1657 248 b 1658 254 1659 261 1660 267 1669 276 1680 284 1689 293 1695 302 1700 311 1707 320 1716 325 1726 330 1735 335 1744 347 1752 360 1761 371 1753 352 1754 331 1753 311 1751 237 1751 163 1751 90 1752 64 1752 37 1767 14 1778 -3 1785 -24 1786 -45 1786 -60 1786 -77 1774 -87 1760 -96 1750 -78 1751 -65 1748 -37 1750 -8 1750 20 1734 78 1715 134 1699 192 1694 211 1689 231 1676 246 1671 251 1661 255 1657 248 m 1909 541 b 1914 542 1922 549 1917 539 1919 520 1921 502 1919 483 1918 458 1917 433 1915 407 1930 373 1942 338 1947 301 1952 270 1954 238 1951 207 1946 214 1947 229 1945 239 1939 278 1936 318 1924 356 1923 362 1913 382 1912 364 1906 301 1904 237 1891 175 1887 150 1892 126 1892 101 1892 68 1893 35 1888 2 1884 -9 1871 -20 1859 -14 1851 -6 1854 9 1854 20 1855 58 1864 95 1873 132 1883 179 1894 225 1899 273 1908 362 1910 451 1909 541{\\p0}",
     -- Brim and tip pompom
-    "{\\c&HF8F8F8&\\p6}m 626 -191 b 565 -155 486 -196 428 -151 387 -115 327 -101 304 -47 273 2 267 59 249 113 219 157 217 213 215 265 217 309 260 302 285 283 373 264 465 264 555 257 608 252 655 292 709 287 759 294 816 276 863 298 903 340 972 324 1012 367 1061 394 1125 382 1167 424 1213 462 1268 482 1322 506 1385 546 1427 610 1479 662 1510 690 1534 725 1566 752 1611 796 1664 830 1703 880 1740 918 1747 986 1805 1005 1863 991 1897 932 1916 880 1914 823 1945 777 1961 725 1979 673 1957 622 1938 575 1912 534 1862 515 1836 473 1790 417 1755 351 1697 305 1658 266 1633 216 1593 176 1574 138 1539 116 1497 110 1448 101 1402 77 1371 37 1346 -16 1295 15 1254 6 1211 -27 1170 -62 1121 -86 1072 -104 1027 -128 976 -133 914 -130 851 -137 794 -162 740 -181 679 -168 626 -191 m 2051 917 b 1971 932 1929 1017 1919 1091 1912 1149 1923 1214 1970 1254 2000 1279 2027 1314 2066 1325 2139 1338 2212 1295 2254 1238 2281 1203 2287 1158 2282 1116 2292 1061 2273 1006 2229 970 2206 941 2167 938 2138 918{\\p0}",
+    "{\\1c&HF8F8F8&\\p6}m 626 -191 b 565 -155 486 -196 428 -151 387 -115 327 -101 304 -47 273 2 267 59 249 113 219 157 217 213 215 265 217 309 260 302 285 283 373 264 465 264 555 257 608 252 655 292 709 287 759 294 816 276 863 298 903 340 972 324 1012 367 1061 394 1125 382 1167 424 1213 462 1268 482 1322 506 1385 546 1427 610 1479 662 1510 690 1534 725 1566 752 1611 796 1664 830 1703 880 1740 918 1747 986 1805 1005 1863 991 1897 932 1916 880 1914 823 1945 777 1961 725 1979 673 1957 622 1938 575 1912 534 1862 515 1836 473 1790 417 1755 351 1697 305 1658 266 1633 216 1593 176 1574 138 1539 116 1497 110 1448 101 1402 77 1371 37 1346 -16 1295 15 1254 6 1211 -27 1170 -62 1121 -86 1072 -104 1027 -128 976 -133 914 -130 851 -137 794 -162 740 -181 679 -168 626 -191 m 2051 917 b 1971 932 1929 1017 1919 1091 1912 1149 1923 1214 1970 1254 2000 1279 2027 1314 2066 1325 2139 1338 2212 1295 2254 1238 2281 1203 2287 1158 2282 1116 2292 1061 2273 1006 2229 970 2206 941 2167 938 2138 918{\\p0}",
 }
 
 --
@@ -1198,7 +1200,7 @@ local function prepare_elements()
         end
 
         -- Calculate the hitbox
-        local hitbox_h = elem_geo.h + ((element.name == "volumebar" or element.name == "zoom_control") and 14 or 0)
+        local hitbox_h = elem_geo.h + ((element.name == "volumebar" or element.name == "zoom_control" or element.name == "speed_slider") and 14 or 0)
         local bX1, bY1, bX2, bY2 = get_hitbox_coords(elem_geo.x, elem_geo.y, elem_geo.an, hitbox_w, hitbox_h)
         element.hitbox = {x1 = bX1, y1 = bY1, x2 = bX2, y2 = bY2}
 
@@ -1532,6 +1534,43 @@ local function draw_seekbar_nibbles(element, elem_ass)
     end
 end
 
+-- Draws tick marks and numeric labels on the speed slider
+-- (1x = prominent default marker, 2x-9x = small ticks; odd values labeled with numbers, all above the track)
+local function draw_speed_markers(element, elem_ass)
+    local slider_lo = element.layout.slider
+    local elem_geo = element.layout.geometry
+    if slider_lo.gap <= 0 then return end
+
+    local track_top = slider_lo.gap
+    local track_bottom = elem_geo.h - slider_lo.gap
+    local left = elem_geo.x - elem_geo.w / 2
+    local top = elem_geo.y - elem_geo.h / 2
+
+    -- small ticks for 2x-9x (just above the track)
+    begin_draw_layer(element, elem_ass, "#999999")
+    for v = 2, 9 do
+        local x = get_slider_ele_pos_for(element, v)
+        elem_ass:rect_cw(x - 0.5, track_top - 4, x + 0.5, track_top - 1)
+    end
+
+    -- prominent default marker for 1x (spans across the track)
+    begin_draw_layer(element, elem_ass, "#FFFFFF")
+    local x1 = get_slider_ele_pos_for(element, 1)
+    elem_ass:rect_cw(x1 - 1, track_top - 4, x1 + 1, track_bottom + 3)
+
+    -- numeric labels above the slider (odd values only: 1/3/5/7/9)
+    elem_ass:draw_stop()
+    for v = 1, 9, 2 do
+        local x = get_slider_ele_pos_for(element, v)
+        elem_ass:new_event()
+        elem_ass:pos(left + x, top - 2)
+        elem_ass:an(2)
+        ass_append_alpha(elem_ass, element.layout.alpha, 0)
+        elem_ass:append("{\\rDefault\\bord0\\fs8\\fn" .. user_opts.font .. "\\1c&H"
+            .. osc_color_convert(v == 1 and "#FFFFFF" or "#999999") .. "&}" .. v)
+    end
+end
+
 -- Draw seekbar progress more accurately
 local function draw_seekbar_progress(element, elem_ass)
     local pos = element.slider.posF()
@@ -1597,7 +1636,8 @@ local function render_elements(master_ass, osc_vis, wc_vis)
             and element.name ~= "title"
             and element.name ~= "chapter_title"
             and element.name ~= "time_codes"
-            and element.name ~= "cache_info" then
+            and element.name ~= "cache_info"
+            and element.name ~= "speed_menu_backdrop" then
             local is_clickable = element.eventresponder and (
                 element.eventresponder["mbtn_left_down"] ~= nil or
                 element.eventresponder["mbtn_left_up"] ~= nil
@@ -1625,6 +1665,24 @@ local function render_elements(master_ass, osc_vis, wc_vis)
             end
         end
 
+        -- Pill / capsule background drawn at render time so its color can react
+        -- live to state changes (e.g. the active speed preset while dragging the slider)
+        if element.type == "button" and element.pill_bg then
+            local pb = element.pill_bg
+            local pb_color = pb.colorF and pb.colorF() or pb.color
+            if pb_color then
+                elem_ass:append("{}")
+                elem_ass:new_event()
+                elem_ass:pos(0, 0)
+                elem_ass:an(7)
+                ass_append_alpha(elem_ass, {[1] = 0, [2] = 255, [3] = 255, [4] = 255}, element.layout.alpha[1], nil, anim_override)
+                elem_ass:append("{\\blur0\\bord0\\1c&H" .. osc_color_convert(pb_color) .. "&}")
+                elem_ass:draw_start()
+                elem_ass:round_rect_cw(pb.x1, pb.y1, pb.x2, pb.y2, pb.radius or 0)
+                elem_ass:draw_stop()
+            end
+        end
+
         elem_ass:merge(style_ass)
 
         if element.type ~= "button" then
@@ -1639,6 +1697,7 @@ local function render_elements(master_ass, osc_vis, wc_vis)
                 local s_max = element.slider.max.value
 
                 draw_seekbar_nibbles(element, elem_ass)
+                if element.name == "speed_slider" then draw_speed_markers(element, elem_ass) end
 
                 -- reset context so handle/progress render on top of nibbles
                 elem_ass:draw_stop()
@@ -2050,7 +2109,7 @@ local function window_controls()
         local size_hover = hover_effects.size and
             string.format("\\fscx%s\\fscy%s", user_opts.button_hover_size, user_opts.button_hover_size) or ""
         local function wc_hoverstyle(color)
-            return "{\\c&H" .. osc_color_convert(color) .. "&" .. size_hover .. "}"
+            return "{\\1c&H" .. osc_color_convert(color) .. "&" .. size_hover .. "}"
         end
 
         local function wc_button(name, geom, hover_color)
@@ -2124,6 +2183,167 @@ local function setup_bg_elements(posX, posY, osc_w, osc_h, osc_alpha3, wc_alpha3
         lo.layer = 10
         lo.group = "top"
         lo.alpha[3] = wc_alpha3
+    end
+end
+
+-- parse speed presets from user_opts string into a table
+local function get_speed_presets()
+    local presets = {}
+    for val in user_opts.speed_presets:gmatch("[^,]+") do
+        local num = tonumber(val:match("^%s*(.-)%s*$"))
+        if num and num > 0 then presets[#presets + 1] = num end
+    end
+    if #presets == 0 then presets = {0.5, 0.75, 1.0, 1.25, 1.5, 2.0} end
+    return presets
+end
+
+-- YouTube-style speed menu: a small title, a big speed readout, a horizontal
+-- slider flanked by -/+ buttons, and a row of preset pills. Shared by all layouts.
+local function layout_speed_menu()
+    local presets = get_speed_presets()
+    local menu_open = elements["speed"] and elements["speed"].visible and state.speed_menu_open
+
+    if not menu_open then
+        elements["speed_menu_backdrop"].visible = false
+        elements["speed_menu_bg"].visible = false
+        elements["speed_menu_title"].visible = false
+        elements["speed_menu_value"].visible = false
+        elements["speed_slider_bg"].visible = false
+        elements["speed_slider"].visible = false
+        elements["speed_dec"].visible = false
+        elements["speed_inc"].visible = false
+        for i = 1, #presets do
+            elements["speed_preset_" .. i].visible = false
+        end
+        return
+    end
+
+    local speed_x = elements["speed"].layout.geometry.x
+    local speed_y = elements["speed"].layout.geometry.y
+    local accent = user_opts.seekbarfg_color
+
+    -- panel geometry
+    local panel_w = math.min(340, osc_param.playresx - 16)
+    local pad_x = 16
+    local pad_top = 12
+    local pad_bottom = 12
+    local title_h = 16
+    local value_h = 36
+    local slider_row_h = 30
+    local preset_row_h = 26
+    local gap_tv = 2    -- title -> value
+    local gap_vs = 6    -- value -> slider
+    local gap_sp = 10   -- slider -> presets
+
+    local panel_h = pad_top + title_h + gap_tv + value_h + gap_vs + slider_row_h + gap_sp + preset_row_h + pad_bottom
+
+    -- keep the panel inside the screen
+    local panel_x = speed_x - panel_w / 2
+    panel_x = math.max(8, math.min(panel_x, osc_param.playresx - panel_w - 8))
+    local panel_y = speed_y - 24 - panel_h
+    if panel_y < 8 then panel_y = 8 end
+
+    -- backdrop covers the whole screen, click outside to close
+    elements["speed_menu_backdrop"].visible = true
+    local lo = add_layout("speed_menu_backdrop")
+    lo.geometry = {x = 0, y = 0, an = 7, w = osc_param.playresx, h = osc_param.playresy}
+    lo.layer = 60
+    lo.style = "{\\1c&H000000&\\alpha&HFF&}"
+
+    -- panel background
+    elements["speed_menu_bg"].visible = true
+    lo = add_layout("speed_menu_bg")
+    lo.geometry = {x = panel_x, y = panel_y, an = 7, w = panel_w, h = panel_h}
+    lo.layer = 61
+    lo.style = "{\\1c&H" .. osc_color_convert(user_opts.osc_color) .. "&\\bord1\\3c&H555555&}"
+    lo.box.radius = 10
+    lo.alpha[1] = 12
+
+    -- vertical centers of each row (absolute coordinates)
+    local title_cy  = panel_y + pad_top + title_h / 2
+    local value_cy  = title_cy + title_h / 2 + gap_tv + value_h / 2
+    local slider_cy = value_cy + value_h / 2 + gap_vs + slider_row_h / 2
+    local preset_cy = slider_cy + slider_row_h / 2 + gap_sp + preset_row_h / 2
+
+    -- title
+    elements["speed_menu_title"].visible = true
+    lo = add_layout("speed_menu_title")
+    lo.geometry = {x = panel_x + pad_x, y = title_cy, an = 4, w = panel_w - 2 * pad_x, h = title_h}
+    lo.layer = 62
+    lo.style = "{\\bord0\\1c&H999999&\\fs13\\fn" .. user_opts.font .. "}"
+
+    -- big current speed readout
+    elements["speed_menu_value"].visible = true
+    lo = add_layout("speed_menu_value")
+    lo.geometry = {x = panel_x + panel_w / 2, y = value_cy, an = 5, w = panel_w - 2 * pad_x, h = value_h}
+    lo.layer = 62
+    lo.style = "{\\bord0\\1c&HFFFFFF&\\fs30\\b1\\fn" .. user_opts.font .. "}"
+
+    -- slider row: [-]  slider  [+]
+    local btn_size = 26
+    local btn_gap = 8
+    local dec_cx = panel_x + pad_x + btn_size / 2
+    local inc_cx = panel_x + panel_w - pad_x - btn_size / 2
+    local slider_x1 = panel_x + pad_x + btn_size + btn_gap
+    local slider_x2 = panel_x + panel_w - pad_x - btn_size - btn_gap
+    local slider_w = slider_x2 - slider_x1
+    local slider_cx = slider_x1 + slider_w / 2
+
+    elements["speed_dec"].visible = true
+    lo = add_layout("speed_dec")
+    lo.geometry = {x = dec_cx, y = slider_cy, an = 5, w = btn_size, h = btn_size}
+    lo.layer = 62
+    lo.style = "{\\bord0\\1c&HFFFFFF&\\fs20\\fn" .. user_opts.font .. "}"
+    elements["speed_dec"].pill_bg = {
+        x1 = dec_cx - btn_size / 2, y1 = slider_cy - btn_size / 2,
+        x2 = dec_cx + btn_size / 2, y2 = slider_cy + btn_size / 2,
+        radius = btn_size / 2,
+        color = "#3D3D3D",
+    }
+
+    elements["speed_inc"].visible = true
+    lo = add_layout("speed_inc")
+    lo.geometry = {x = inc_cx, y = slider_cy, an = 5, w = btn_size, h = btn_size}
+    lo.layer = 62
+    lo.style = "{\\bord0\\1c&HFFFFFF&\\fs20\\fn" .. user_opts.font .. "}"
+    elements["speed_inc"].pill_bg = {
+        x1 = inc_cx - btn_size / 2, y1 = slider_cy - btn_size / 2,
+        x2 = inc_cx + btn_size / 2, y2 = slider_cy + btn_size / 2,
+        radius = btn_size / 2,
+        color = "#3D3D3D",
+    }
+
+    -- slider track background
+    elements["speed_slider_bg"].visible = true
+    lo = add_layout("speed_slider_bg")
+    lo.geometry = {x = slider_cx, y = slider_cy, an = 5, w = slider_w, h = 4}
+    lo.layer = 62
+    lo.style = "{\\1c&H5A5A5A&}"
+    lo.box.radius = 2
+    lo.alpha[1] = 0
+
+    -- slider (progress + draggable handle)
+    elements["speed_slider"].visible = true
+    lo = add_layout("speed_slider")
+    lo.geometry = {x = slider_cx, y = slider_cy, an = 5, w = slider_w, h = 14}
+    lo.layer = 63
+    lo.style = "{\\1c&H" .. osc_color_convert(accent) .. "&}"
+    lo.slider.handle_color = accent
+    lo.slider.radius = 2
+    lo.slider.gap = 5
+
+    -- preset buttons (simple text options in a horizontal row)
+    local inner_w = panel_w - 2 * pad_x
+    local n = #presets
+    local slot_w = inner_w / n
+    for i = 1, n do
+        local name = "speed_preset_" .. i
+        local cx = panel_x + pad_x + slot_w / 2 + (i - 1) * slot_w
+        elements[name].visible = true
+        lo = add_layout(name)
+        lo.geometry = {x = cx, y = preset_cy, an = 5, w = slot_w, h = preset_row_h}
+        lo.layer = 63
+        lo.style = "{\\bord0\\fs13\\fn" .. user_opts.font .. "}"
     end
 end
 
@@ -2413,6 +2633,9 @@ layouts["default"] = function ()
         lo.geometry.an = 6
         lo.alpha[3] = 0
     end
+
+    -- speed menu panel (YouTube-style)
+    layout_speed_menu()
 end
 
 layouts["compact"] = function ()
@@ -2634,6 +2857,9 @@ layouts["compact"] = function ()
     lo.layer = 48
     lo.alpha[3] = 0
     lo.style = osc_styles.time
+
+    -- speed menu panel (YouTube-style)
+    layout_speed_menu()
 end
 
 layouts["mini"] = function ()
@@ -2809,6 +3035,9 @@ layouts["mini"] = function ()
     lo.layer = 48
     lo.alpha[3] = 0
     lo.style = osc_styles.time
+
+    -- speed menu panel (YouTube-style)
+    layout_speed_menu()
 end
 
 layouts["seekbar"] = function ()
@@ -3055,6 +3284,18 @@ local function build_cache_seek_ranges()
         }
     end
     return nranges
+end
+
+local function toggle_speed_menu()
+    state.speed_menu_open = not state.speed_menu_open
+    request_init()
+end
+
+local function close_speed_menu()
+    if state.speed_menu_open then
+        state.speed_menu_open = false
+        request_init()
+    end
 end
 
 local function osc_init()
@@ -3432,6 +3673,103 @@ local function osc_init()
     ne.content = function() return string.format(state.speed % 1 == 0 and "%.1f×" or "%g×", state.speed) end
     ne.tooltipF = locale.speed_control
     bind_buttons("speed")
+    -- override left click to toggle speed menu
+    ne.eventresponder["mbtn_left_up"] = function() toggle_speed_menu() end
+
+    --speed menu backdrop (click outside to close)
+    ne = new_element("speed_menu_backdrop", "button")
+    ne.content = ""
+    ne.visible = false
+    ne.eventresponder["mbtn_left_up"] = function() close_speed_menu() end
+
+    --speed menu background panel
+    ne = new_element("speed_menu_bg", "box")
+    ne.visible = false
+
+    --speed menu title (non-interactive label)
+    ne = new_element("speed_menu_title", "button")
+    ne.content = function() return locale.speed_control end
+    ne.visible = false
+
+    --speed menu big current speed readout (non-interactive)
+    ne = new_element("speed_menu_value", "button")
+    ne.content = function()
+        local spd = mp.get_property_number("speed", 1)
+        return string.format("%.2f", spd):gsub("%.?0+$", "") .. "×"
+    end
+    ne.visible = false
+
+    --speed slider track background
+    ne = new_element("speed_slider_bg", "box")
+    ne.visible = false
+
+    --speed slider (0.05x - 10x, snaps to 0.25 steps)
+    ne = new_element("speed_slider", "slider")
+    ne.visible = false
+    ne.slider = {min = {value = 0.05}, max = {value = 10}}
+    ne.slider.markerF = function() return {} end
+    ne.slider.seekRangesF = function() return nil end
+    ne.slider.posF = function() return mp.get_property_number("speed", 1) end
+    local function snap_speed(v)
+        v = math.floor(v / 0.25 + 0.5) * 0.25
+        return math.max(0.05, math.min(10, v))
+    end
+    ne.eventresponder["mbtn_left_down"] = function(element)
+        element.state.mbtnleft = true
+        mp.set_property_number("speed", snap_speed(get_slider_value(element)))
+    end
+    ne.eventresponder["mouse_move"] = function(element)
+        if not element.state.mbtnleft then return end
+        local v = snap_speed(get_slider_value(element))
+        if element.state.lastseek ~= v then
+            mp.set_property_number("speed", v)
+            element.state.lastseek = v
+        end
+    end
+    ne.eventresponder["mbtn_left_up"] = function(element)
+        element.state.mbtnleft = false
+        element.state.lastseek = nil
+    end
+    ne.eventresponder["reset"] = function(element)
+        element.state.mbtnleft = false
+        element.state.lastseek = nil
+    end
+
+    --speed step helper for the -/+ buttons (0.05 steps for fine-tuning, same range as the slider: 0.05 - 10)
+    local function adjust_speed(delta)
+        local spd = mp.get_property_number("speed", 1) + delta
+        spd = math.floor(spd / 0.05 + 0.5) * 0.05
+        spd = math.max(0.05, math.min(10, spd))
+        mp.set_property_number("speed", spd)
+    end
+
+    --speed decrease button
+    ne = new_element("speed_dec", "button")
+    ne.content = "-"
+    ne.visible = false
+    ne.eventresponder["mbtn_left_up"] = function() adjust_speed(-0.05) end
+
+    --speed increase button
+    ne = new_element("speed_inc", "button")
+    ne.content = "+"
+    ne.visible = false
+    ne.eventresponder["mbtn_left_up"] = function() adjust_speed(0.05) end
+
+    --speed preset buttons (active one is highlighted in the accent color)
+    local speed_presets = get_speed_presets()
+    for i, spd in ipairs(speed_presets) do
+        ne = new_element("speed_preset_" .. i, "button")
+        ne.content = function()
+            local is_active = math.abs(state.speed - spd) < 0.001
+            local label = string.format("%g", spd)
+            return is_active and ("{\\1c&H" .. osc_color_convert(user_opts.seekbarfg_color) .. "&\\b1}" .. label) or ("{\\1c&HCCCCCC&}" .. label)
+        end
+        ne.visible = false
+        ne.speed_value = spd
+        ne.eventresponder["mbtn_left_up"] = function()
+            mp.set_property_number("speed", spd)
+        end
+    end
 
     --download
     ne = new_element("download", "button")
@@ -3657,6 +3995,8 @@ local function show_osc()
 end
 
 local function hide_osc()
+    -- close speed menu if open
+    state.speed_menu_open = false
     -- clear any pending thumbnail before hiding
     if thumbfast.width ~= 0 and thumbfast.height ~= 0 then
         mp.commandv("script-message-to", "thumbfast", "clear")
@@ -3675,7 +4015,7 @@ local function mouse_leave()
     if get_hidetimeout() >= 0 and get_touchtimeout() <= 0 then
         if user_opts.deadzone_hide == "timeout" then
             local now = mp.get_time()
-            if state.osc_visible and not state.keeponpause_active then
+            if state.osc_visible and not state.keeponpause_active and not state.speed_menu_open then
                 state.showtime = now
             end
             if state.wc_visible then
@@ -3683,7 +4023,7 @@ local function mouse_leave()
             end
             request_tick()
         else
-            if not state.keeponpause_active then hide_osc() end
+            if not state.keeponpause_active and not state.speed_menu_open then hide_osc() end
             hide_wc()
         end
     end
@@ -3753,6 +4093,14 @@ end
 local function refresh_input_area()
     if not state.osc_visible then
         set_virt_mouse_area(0, 0, 0, 0, "input")
+        set_virt_mouse_area(0, 0, 0, 0, "input_wheel")
+        set_virt_mouse_area(0, 0, 0, 0, "input_mid")
+        return
+    end
+
+    -- when speed menu is open, capture full screen for backdrop clicks
+    if state.speed_menu_open then
+        set_virt_mouse_area(0, 0, osc_param.playresx, osc_param.playresy, "input")
         set_virt_mouse_area(0, 0, 0, 0, "input_wheel")
         set_virt_mouse_area(0, 0, 0, 0, "input_mid")
         return
@@ -3853,7 +4201,7 @@ local function process_event(source, what)
                 elseif user_opts.visibility ~= "always" and user_opts.deadzone_hide ~= "timeout" then
                     hide_wc()
                 end
-                if mouse_in_area("showhide") then
+                if mouse_in_area("showhide") or state.speed_menu_open then
                     show_osc()
                 elseif user_opts.visibility ~= "always" and not state.keeponpause_active and user_opts.deadzone_hide ~= "timeout" then
                     hide_osc()
@@ -4037,7 +4385,7 @@ local function render()
     end
 
     if state.hide_timer then state.hide_timer.timeout = math.huge end
-    if not state.keeponpause_active then
+    if not state.keeponpause_active and not state.speed_menu_open then
         run_autohide("showtime", hide_osc, osc_areas)
     end
     run_autohide("wc_showtime", hide_wc, wc_areas)
@@ -4165,6 +4513,7 @@ mp.register_event("start-file", function()
     -- reset ab loop on new file start
     mp.set_property("ab-loop-a", "no")
     mp.set_property("ab-loop-b", "no")
+    state.speed_menu_open = false
     request_init()
 end)
 mp.observe_property("track-list", "native", update_tracklist)
