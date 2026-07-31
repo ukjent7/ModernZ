@@ -6,6 +6,9 @@ local user_opts = require("modules.options")
 local _constants = require("modules.constants")
 local icon_font = _constants.icon_font
 
+local _string_utils = require("modules.string_utils")
+local replace_table = _string_utils.replace_table
+
 local icon_themes = {
     fluent   = { prefix = "fluent_"   },
     material = { prefix = "material_" },
@@ -76,9 +79,7 @@ local function build_icons(theme_name, style)
 end
 
 local function set_icon_theme()
-    local _ic = build_icons(user_opts.icon_theme, user_opts.icon_style)
-    for k in pairs(icons) do icons[k] = nil end
-    for k, v in pairs(_ic) do icons[k] = v end
+    replace_table(icons, build_icons(user_opts.icon_theme, user_opts.icon_style))
 end
 
 -- Accessor: returns the private icons table (read-only by convention).

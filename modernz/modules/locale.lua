@@ -1,9 +1,13 @@
 -- modernz :: modules/locale.lua
 -- Locale strings are module-owned data, accessed via get_locale() rather than a shared table.
 
+local msg = require "mp.msg"
 local utils = require "mp.utils"
 
 local user_opts = require("modules.options")
+
+local _string_utils = require("modules.string_utils")
+local replace_table = _string_utils.replace_table
 
 local language = {
     ["default"] = {
@@ -72,7 +76,7 @@ local function get_locale_from_json(path)
 
     local json_table, parse_error = utils.parse_json(json)
     if not json_table then
-        mp.msg.error("JSON parse error:" .. parse_error)
+        msg.error("JSON parse error:" .. parse_error)
     end
     return json_table
 end
@@ -88,7 +92,7 @@ local function load_locale_file()
         for lang, strings in pairs(external) do
             if lang == "default" then
                 -- "default" is reserved
-                mp.msg.warn("Locale JSON: 'default' is a reserved language key and cannot be overridden. Skipping.")
+                msg.warn("Locale JSON: 'default' is a reserved language key and cannot be overridden. Skipping.")
             elseif type(strings) == "table" then
                 language[lang] = strings
 
@@ -99,16 +103,14 @@ local function load_locale_file()
                     end
                 end
             else
-                mp.msg.warn("Locale data for language '" .. lang .. "' is not in the correct format.")
+                msg.warn("Locale data for language '" .. lang .. "' is not in the correct format.")
             end
         end
     end
 end
 
 local function set_osc_locale()
-    local _loc = language[user_opts.language] or language["default"]
-    for k in pairs(locale) do locale[k] = nil end
-    if _loc then for k, v in pairs(_loc) do locale[k] = v end end
+    replace_table(locale, language[user_opts.language] or language["default"])
 end
 
 -- Accessor: returns the private locale table (read-only by convention).
@@ -116,8 +118,6 @@ local function get_locale()
     return locale
 end
 
--- get_locale_from_json is used internally only (by load_locale_file) and
--- stays as a local function above.
 return {
     language = language,
     bidi = bidi,

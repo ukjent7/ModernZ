@@ -6,6 +6,9 @@ local msg = require "mp.msg"
 
 local user_opts = require("modules.options")
 
+local _string_utils = require("modules.string_utils")
+local strip_font_scale = _string_utils.strip_font_scale
+
 local _styles = require("modules.styles")
 local osc_styles = _styles.get_osc_styles()
 
@@ -15,6 +18,9 @@ local _geometry_utils = require("modules.geometry_utils")
 local get_hitbox_coords = _geometry_utils.get_hitbox_coords
 local _ass_utils = require("modules.ass_utils")
 local ass_draw_rr_h_cw = _ass_utils.ass_draw_rr_h_cw
+
+-- Sliders whose hitbox gets extra vertical padding beyond the layout height.
+local SLIDER_HITBOX_PAD = { volumebar = true, zoom_control = true, speed_slider = true }
 
 -- Private elements table, owned by this module
 local elements = {}
@@ -49,7 +55,7 @@ local function prepare_elements()
         end
 
         -- Calculate the hitbox
-        local hitbox_h = elem_geo.h + ((element.name == "volumebar" or element.name == "zoom_control" or element.name == "speed_slider") and 14 or 0)
+        local hitbox_h = elem_geo.h + (SLIDER_HITBOX_PAD[element.name] and 14 or 0)
         local bX1, bY1, bX2, bY2 = get_hitbox_coords(elem_geo.x, elem_geo.y, elem_geo.an, hitbox_w, hitbox_h)
         element.hitbox = {x1 = bX1, y1 = bY1, x2 = bX2, y2 = bY2}
 
@@ -130,6 +136,9 @@ local function new_element(name, type)
         elements[name].tooltip_style = osc_styles.tooltip
     elseif type == "slider" then
         elements[name].slider = {min = {value = 0}, max = {value = 100}}
+        -- empty defaults so a new slider only overrides what it actually draws
+        elements[name].slider.markerF = function() return {} end
+        elements[name].slider.seekRangesF = function() return nil end
         elements[name].thumbnailable = false
     end
 
@@ -163,7 +172,7 @@ local function add_layout(name)
                 tooltip_style = osc_styles.tooltip,
                 tooltip_an = 2,
                 alpha = {[1] = 0, [2] = 255, [3] = 88, [4] = 255},
-                hoverstyle = osc_styles.element_hover:gsub("\\fscx%d+\\fscy%d+", ""), -- font scales messes with handle positions in werid ways
+                hoverstyle = strip_font_scale(osc_styles.element_hover), -- font scales mess with handle positions in weird ways
             }
         elseif elements[name].type == "box" then
             elements[name].layout.box = {radius = 0, hexagon = false}
@@ -175,7 +184,9 @@ local function add_layout(name)
     end
 end
 
--- Accessor: returns the private elements table.
+-- Accessor: returns the private elements table. The reference never goes
+-- stale: prepare_elements()/clear_elements() rebuild it in place rather than
+-- replacing the table, so callers may cache this reference at module load.
 local function get_elements()
     return elements
 end

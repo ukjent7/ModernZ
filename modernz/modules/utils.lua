@@ -1,16 +1,14 @@
 -- modernz :: modules/utils.lua
 --
--- Remaining after the module split: OSD submission/observation, text-width
--- measurement (and its cache), time-code formatting, cache-range helpers,
--- and window-control detection. Geometry/mouse math moved to
--- geometry_utils.lua, ASS drawing helpers moved to ass_utils.lua, and margin
--- management moved to margin_utils.lua.
+-- OSD submission/observation, text-width measurement (with cache), time-code
+-- formatting, cache-range helpers, and window-control detection.
 
 local msg = require "mp.msg"
 
 local core = require("modules.core")
 local state = core.state
 local osc_param = core.osc_param
+local thumbfast = core.thumbfast
 
 local user_opts = require("modules.options")
 
@@ -20,15 +18,6 @@ local UNICODE_MINUS = _constants.UNICODE_MINUS
 
 local _margin_utils = require("modules.margin_utils")
 local get_hidetimeout = _margin_utils.get_hidetimeout
-
--- utils.lua depends on styles.lua for get_time_codes_width(), which needs
--- the current osc_styles table. This is a plain one-directional require:
--- styles.lua no longer requires utils.lua (it gets contains() from
--- string_utils.lua instead), so there is no cycle here.
-local _styles = require("modules.styles")
-local function get_osc_styles()
-    return _styles.get_osc_styles()
-end
 
 -- Private text width cache, owned by this module
 local text_width_cache = {}
@@ -98,8 +87,8 @@ local function estimate_text_width(text, style)
     return width
 end
 
--- width of the time codes element
-local function get_time_codes_width()
+-- width of the time codes element; time_style is the ASS style tag to measure with
+local function get_time_codes_width(time_style)
     local dur = state.duration or 0
     local rt_sec = state.tc_left_rem and mp.get_property_number("playtime-remaining", 0) or mp.get_property_number("playback-time", 0)
 
@@ -117,7 +106,7 @@ local function get_time_codes_width()
     end
 
     local prefix = state.tc_left_rem and (user_opts.unicodeminus and UNICODE_MINUS or "-") or ""
-    local w = estimate_text_width(prefix .. time_fmt(rt_sec) .. " / " .. time_fmt(dur), get_osc_styles().time)
+    local w = estimate_text_width(prefix .. time_fmt(rt_sec) .. " / " .. time_fmt(dur), time_style)
     return w ~= 0 and w or 120 + (state.tc_ms and 40 or 0)
 end
 
@@ -147,6 +136,14 @@ local function set_volume(slider_pos)
         volume = slider_pos^2 / 100
     end
     return math.floor(volume)
+end
+
+-- Clear a pending thumbfast thumbnail, if any (used when hiding the OSC or
+-- opening the console so a stale thumbnail doesn't linger on screen).
+local function clear_thumbfast()
+    if thumbfast.width ~= 0 and thumbfast.height ~= 0 then
+        mp.commandv("script-message-to", "thumbfast", "clear")
+    end
 end
 
 -- WindowControl helpers
@@ -211,6 +208,7 @@ return {
     cache_enabled = cache_enabled,
     render_wipe = render_wipe,
     set_volume = set_volume,
+    clear_thumbfast = clear_thumbfast,
     window_controls_enabled = window_controls_enabled,
     format_time = format_time,
     build_cache_seek_ranges = build_cache_seek_ranges,

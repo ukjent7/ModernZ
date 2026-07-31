@@ -1,8 +1,6 @@
 -- modernz :: modules/geometry_utils.lua
 -- Coordinate math: mouse position (real <-> virtual ASS coordinates), hitbox
--- geometry, and slider value <-> position conversion. Split out of the old
--- monolithic utils.lua so this cohesive group of geometry helpers lives in
--- one place, separate from ASS drawing helpers and margin management.
+-- geometry, and slider value <-> position conversion.
 
 local core = require("modules.core")
 local state = core.state
@@ -38,8 +36,20 @@ local function get_virt_mouse_pos()
     end
 end
 
+-- Last mouse area set per name. render() calls set_virt_mouse_area for the
+-- showhide areas every tick; skipping unchanged updates avoids the mpv IPC
+-- round-trip. The scale factors are part of the key so a window resize (same
+-- virtual coords, different scale) still triggers an update.
+local last_areas = {}
+
 local function set_virt_mouse_area(x0, y0, x1, y1, name)
     local sx, sy = get_virt_scale_factor()
+    local prev = last_areas[name]
+    if prev and prev.x0 == x0 and prev.y0 == y0 and prev.x1 == x1 and prev.y1 == y1
+        and prev.sx == sx and prev.sy == sy then
+        return
+    end
+    last_areas[name] = {x0 = x0, y0 = y0, x1 = x1, y1 = y1, sx = sx, sy = sy}
     mp.set_mouse_area(x0 / sx, y0 / sy, x1 / sx, y1 / sy, name)
 end
 
@@ -145,8 +155,6 @@ local function add_area(name, x1, y1, x2, y2)
     table.insert(osc_param.areas[name], {x1=x1, y1=y1, x2=x2, y2=y2})
 end
 
--- recently_touched is used internally only (by get_virt_mouse_pos) and
--- stays as a local function above.
 return {
     get_virt_scale_factor = get_virt_scale_factor,
     get_virt_mouse_pos = get_virt_mouse_pos,

@@ -1,6 +1,5 @@
 -- modernz :: modules/margin_utils.lua
--- Video/OSD/subtitle margin management. Split out of the old monolithic
--- utils.lua so this cohesive group of margin helpers lives in one place.
+-- Video/OSD/subtitle margin management.
 
 local core = require("modules.core")
 local state = core.state

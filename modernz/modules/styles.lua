@@ -10,6 +10,7 @@ local user_opts = require("modules.options")
 local _icons = require("modules.icons")
 local _string_utils = require("modules.string_utils")
 local contains = _string_utils.contains
+local replace_table = _string_utils.replace_table
 
 -- Private module-owned data
 local osc_styles = {}
@@ -38,8 +39,7 @@ local function set_osc_styles()
         xlarge = { radius = 4, height = 8 }
     }
     local _sh = seekbar_presets[user_opts.seekbar_height] or seekbar_presets.medium
-    for k in pairs(seekbar_height_style) do seekbar_height_style[k] = nil end
-    for k, v in pairs(_sh) do seekbar_height_style[k] = v end
+    replace_table(seekbar_height_style, _sh)
 
     local _os = {
         osc_fade_bg = "{\\blur" .. user_opts.fade_blur_strength .. "\\bord" .. user_opts.osc_fade_strength .. "\\1c&H0&\\3c&H" .. osc_color_convert(user_opts.osc_color) .. "&}",
@@ -66,8 +66,7 @@ local function set_osc_styles()
         element_hover = "{" .. (hover_effects.color and "\\1c&H" .. osc_color_convert(user_opts.hover_effect_color) .. "&" or "") .. (hover_effects.size and string.format("\\fscx%s\\fscy%s", user_opts.button_hover_size, user_opts.button_hover_size) or "") .. "}",
         hover_bg = "{\\1c&H" .. osc_color_convert(user_opts.hover_effect_color) .. "&}",
     }
-    for k in pairs(osc_styles) do osc_styles[k] = nil end
-    for k, v in pairs(_os) do osc_styles[k] = v end
+    replace_table(osc_styles, _os)
 end
 
 local function set_time_styles(timecurrent_changed, timems_changed)

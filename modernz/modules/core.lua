@@ -1,11 +1,12 @@
 -- modernz :: modules/core.lua
--- Minimal shared runtime state + event bus for loose module coupling.
--- Module-owned data (icons, styles, locale, elements, layouts, etc.) lives
--- in their respective modules, not here.
+-- Shared runtime state + tick/init scheduling. Module-owned data (icons,
+-- styles, locale, elements, layouts, etc.) lives in their own modules.
+
+local msg = require "mp.msg"
 
 local user_opts = require("modules.options")
 
--- OSC layout parameters (calculated by osc_init, read by rendering/utils/layouts)
+-- OSC layout parameters (canvas coordinate system)
 local osc_param = {
     playresy = 0,
     playresx = 0,
@@ -112,8 +113,88 @@ local state = {
     chapter_title_max_w = nil,
 }
 
+-- Reset the video margins to zero in place (keeps the osc_param.video_margins
+-- reference valid across re-inits).
+local function reset_video_margins()
+    osc_param.video_margins.l = 0
+    osc_param.video_margins.r = 0
+    osc_param.video_margins.t = 0
+    osc_param.video_margins.b = 0
+end
+
+-- Whether the persistent progress line is enabled (option or runtime toggle).
+local function persistent_progress_enabled()
+    return user_opts.persistent_progress or state.persistent_progress_toggle
+end
+
+-- Tick/init scheduling. tick() is defined in the events module and injected
+-- here at load time via set_tick(). Every entry point that needs it goes
+-- through ensure_tick(), which fails loudly instead of leaving a nil passed
+-- into mp.add_timeout.
+local tick_delay = 1 / 60
+local tick
+local function set_tick(fn) tick = fn end
+
+local function ensure_tick()
+    if not tick then
+        msg.error("core.lua: tick() requested before set_tick() was called - ignoring. " ..
+                   "This means module load order is wrong (events.lua must call set_tick() at load time).")
+        return false
+    end
+    return true
+end
+
+local function request_tick()
+    if not ensure_tick() then return end
+
+    if state.tick_timer == nil then
+        state.tick_timer = mp.add_timeout(0, tick)
+    end
+
+    if not state.tick_timer:is_enabled() then
+        local now = mp.get_time()
+        local timeout = tick_delay - (now - state.tick_last_time)
+        if timeout < 0 then
+            timeout = 0
+        end
+        state.tick_timer.timeout = timeout
+        state.tick_timer:resume()
+    end
+end
+
+local function request_init()
+    state.initREQ = true
+    request_tick()
+end
+
+local function request_init_resize()
+    request_init()
+    if not state.tick_timer then return end
+    -- ensure immediate update
+    state.tick_timer:kill()
+    state.tick_timer.timeout = 0
+    state.tick_timer:resume()
+end
+
+local function set_tick_delay(_, display_fps)
+    -- may be nil if unavailable, or 0 if a display reports 0 fps; guard both
+    -- so a stale 0 can't produce tick_delay = 1/0 = inf
+    if not display_fps or display_fps <= 0 or not user_opts.tick_delay_follow_display_fps then
+        tick_delay = user_opts.tick_delay
+        return
+    end
+    tick_delay = 1 / display_fps
+end
+
 return {
     state = state,
     osc_param = osc_param,
     thumbfast = thumbfast,
+    reset_video_margins = reset_video_margins,
+    persistent_progress_enabled = persistent_progress_enabled,
+    request_tick = request_tick,
+    request_init = request_init,
+    request_init_resize = request_init_resize,
+    set_tick_delay = set_tick_delay,
+    set_tick = set_tick,
 }

@@ -1,8 +1,6 @@
 -- modernz :: modules/ass_utils.lua
--- ASS subtitle-drawing helpers: alpha blending/animation and small shape
--- primitives (tooltips, circles, rounded rects/hexagons). Split out of the
--- old monolithic utils.lua so this cohesive group of drawing helpers lives
--- in one place, separate from geometry math and margin management.
+-- ASS drawing helpers: alpha blending/animation and small shape primitives
+-- (tooltips, circles, rounded rects/hexagons).
 
 local core = require("modules.core")
 local state = core.state
@@ -10,9 +8,7 @@ local state = core.state
 local user_opts = require("modules.options")
 
 local _styles = require("modules.styles")
-local function get_osc_styles()
-    return _styles.get_osc_styles()
-end
+local osc_styles = _styles.get_osc_styles()
 local _locale = require("modules.locale")
 local bidi = _locale.bidi
 
@@ -51,7 +47,7 @@ local function draw_tooltip(ass, tx, ty, width, style, label, alpha)
     ass:append("{\\rDefault\\alpha&H4D&}")
     ass:pos(tx - box_w / 2, ty - fs - pv)
     ass:an(7)
-    ass:append(get_osc_styles().tooltip_box)
+    ass:append(osc_styles.tooltip_box)
     ass:draw_start()
     ass:round_rect_cw(0, 0, box_w, box_h, box_h / 2)
     ass:draw_stop()
@@ -79,8 +75,6 @@ local function ass_draw_rr_h_cw(ass, x0, y0, x1, y1, r1, hexagon, r2)
     end
 end
 
--- mult_alpha is used internally only (by ass_append_alpha) and stays as a
--- local function above.
 return {
     ass_append_alpha = ass_append_alpha,
     draw_tooltip = draw_tooltip,
