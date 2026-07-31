@@ -78,7 +78,6 @@ local state = {
     windowcontrols_ontop = false,
     dmx_cache = 0,
     border = true,
-    title_bar = true,
     window_maximized = false,
     osd = mp.create_osd_overlay("ass-events"),
     logo_osd = mp.create_osd_overlay("ass-events"),
