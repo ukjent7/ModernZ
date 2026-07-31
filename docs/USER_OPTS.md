@@ -215,6 +215,9 @@ watch-later-options-remove=osd-margin-y
 | tick_delay                    | 0.0167            | minimum interval between OSC redraws (in seconds)             |
 | tick_delay_follow_display_fps | no                | use display FPS as the minimum redraw interval                |
 
+> **Note:** `visibility=never` disables the whole OSC loop, which also hides the
+> idle-screen logo (`idlescreen`) regardless of that option's value.
+
 ### Elements Position
 
 Useful when adjusting font size or type, this will help you change the affected elements position
