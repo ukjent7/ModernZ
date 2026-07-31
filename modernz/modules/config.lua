@@ -97,13 +97,25 @@ local function validate_user_opts()
         user_opts.showonpause = true
     end
 
-    local watch_later = "," .. ((mp.get_property("options/watch-later-options") or ""):gsub("%s+", "")) .. ","
-    if user_opts.sub_margins and watch_later:find(",sub-pos,", 1, true) then
-        msg.warn("sub_margins conflict: add watch-later-options-remove=sub-pos to mpv.conf")
+    -- sub_margins/osd_margins temporarily rewrite sub-pos/osd-margin-y while the
+    -- OSC is shown. mpv's default watch-later-options include both (0.36+), so a
+    -- raised value could leak into the watch_later file and keep the subtitle
+    -- suspended above the bottom on the next session. Strip them from the
+    -- save/restore list here so no mpv.conf workaround is needed: the script
+    -- always restores the user's real value itself.
+    local function strip_watch_later(option)
+        local list = mp.get_property("options/watch-later-options") or ""
+        local tokens, n = {}, 0
+        for tok in list:gmatch("[^,]+") do
+            if tok ~= option then
+                n = n + 1
+                tokens[n] = tok
+            end
+        end
+        mp.set_property("options/watch-later-options", table.concat(tokens, ","))
     end
-    if user_opts.osd_margins and watch_later:find(",osd-margin-y,", 1, true) then
-        msg.warn("osd_margins conflict: add watch-later-options-remove=osd-margin-y to mpv.conf")
-    end
+    if user_opts.sub_margins then strip_watch_later("sub-pos") end
+    if user_opts.osd_margins then strip_watch_later("osd-margin-y") end
 end
 
 return {
