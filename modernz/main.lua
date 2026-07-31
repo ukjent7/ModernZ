@@ -14,11 +14,18 @@ local msg = require "mp.msg"
 local opt = require "mp.options"
 local utils = require "mp.utils"
 
--- Resolve the module directory so require() can find modules/*.lua
+-- Resolve the module directory so require() can find modules/*.lua.
+-- Note: mp.get_script_directory() can return nil during the top-level load of
+-- a script auto-loaded from mpv's scripts/ directory (observed on mpv 0.41.0:
+-- "attempt to concatenate a nil value" at the package.path line). Fall back to
+-- deriving the directory from the debug source path ("@/abs/path/main.lua"),
+-- which is always available while the file is being loaded.
 local script_dir = mp.get_script_directory()
+if not script_dir or script_dir == "" then
+    local src = (debug.getinfo(1, "S").source or ""):gsub("^@", "")
+    script_dir = src:match("^(.+)[/\\][^/\\]*$") or "."
+end
 package.path = script_dir .. "/?.lua;" .. package.path
-
-mp.set_property("osc", "no")
 
 local core = require("modules.core")
 local state = core.state
@@ -66,6 +73,11 @@ local visibility_mode = _events.visibility_mode
 local idlescreen_visibility = _events.idlescreen_visibility
 local _config = require("modules.config")
 local validate_user_opts = _config.validate_user_opts
+
+-- Disable the built-in OSC only after every module has loaded successfully.
+-- Placed here (not at the top) so that a module load failure leaves mpv's own
+-- OSC as a fallback instead of leaving the player with no OSC at all.
+mp.set_property("osc", "no")
 
 mp.register_event("shutdown", function()
     reset_margins()
