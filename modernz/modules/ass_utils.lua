@@ -13,8 +13,11 @@ local _locale = require("modules.locale")
 local bidi = _locale.bidi
 
 -- multiplies two alpha values, formular can probably be improved
+-- rounded to an integer: the result feeds into string.format("%X", ...) below,
+-- which requires an integer representation (Lua 5.4 errors on fractional
+-- floats), and ASS alpha is an 8-bit value anyway.
 local function mult_alpha(alphaA, alphaB)
-    return 255 - (((1-(alphaA/255)) * (1-(alphaB/255))) * 255)
+    return math.floor(255 - (((1-(alphaA/255)) * (1-(alphaB/255))) * 255) + 0.5)
 end
 
 local function ass_append_alpha(ass, alpha, modifier, inverse, anim_override)
