@@ -4,7 +4,7 @@
 
 A sleek and modern OSC (On Screen Controller) for [mpv](https://mpv.io/). This project is a fork of ModernX that enhances functionality with more features while preserving the core standards of mpv's OSC.
 
-This distribution ships the **modular refactor** of ModernZ (v0.3.3): the former single-file `main.lua` is split into small `modules/*.lua` files with clear responsibilities (layouts, rendering, events, options, styles, icons, locale, margins, …), bundled together with a **portable mpv build for Windows**.
+This repository tracks the **modular refactor** of ModernZ (v0.3.3): the former single-file `main.lua` is split into small `modules/*.lua` files with clear responsibilities (layouts, rendering, events, options, styles, icons, locale, margins, …), each `require`d by `main.lua`.
 
 ![modernz_preview](https://github.com/user-attachments/assets/69a967ae-cf8a-4a92-9193-4799f901cd94)
 
@@ -130,47 +130,37 @@ For the full list of options, see the [upstream ModernZ user-options guide](http
 
 > **Requirements:** mpv **≥ 0.35** (text measurement uses `osd_overlay.compute_bounds`; on older versions the OSC degrades gracefully). [thumbfast](https://github.com/po5/thumbfast) is required for thumbnail previews; [yt-dlp](https://github.com/yt-dlp/yt-dlp) + ffmpeg are required for the download button.
 
-This folder **is** the player. Everything is self-contained:
-
-1. **Run it.** Double-click `mpv.exe` (or use the included `mpv-register.bat` to associate file types with mpv; `mpv-unregister.bat` removes the associations).
-2. **Nothing to disable.** The stock OSC is turned off automatically by `scripts/main.lua` once it finishes loading. Do **not** add `osc=no` to `mpv.conf`.
-3. **Optional native title bar.** `portable_config/mpv.conf` already sets `title-bar=no` so ModernZ's drawn window controls (close/minimize/maximize) replace the native one. Remove that line if you prefer the native bar.
+1. **Copy the script** — place `scripts/main.lua` together with its `scripts/modules/` folder into your mpv `scripts` directory. mpv auto-loads `main.lua`; the `modules/` files are only `require`d by it.
+2. **Install the icons** — copy `fonts/modernz-icons.ttf` into your mpv `fonts` directory.
+3. **Configure** — copy `script-opts/modernz.conf` into your mpv `script-opts` directory (edit to taste).
+4. **Optional extras** — `modernz-locale.json` → `script-opts/`, `thumbfast.lua` → `scripts/`, `thumbfast.conf` → `script-opts/`.
+5. **Nothing to disable.** The stock OSC is turned off automatically by `main.lua` once it finishes loading — do **not** add `osc=no` to `mpv.conf`.
 
 ### Folder Structure
 
 ```
-📁 mpv-v0.41.0/
-├── 📄 mpv.exe / mpv.com / vulkan-1.dll   ← the player
-├── 📄 mpv-register.bat / mpv-unregister.bat
-└── 📁 portable_config/                    ← mpv config dir (portable mode)
-    ├── 📁 fonts/
-    │   └── 📄 modernz-icons.ttf
-    ├── 📁 script-opts/
-    │   ├── 📄 modernz.conf             ← ModernZ options (all defaults)
-    │   ├── 📄 modernz-locale.json      ← UI translations
-    │   └── 📄 thumbfast.conf
-    ├── 📁 scripts/
-    │   ├── 📄 main.lua                 ← ModernZ entry point (auto-loaded)
-    │   └── 📁 modules/                 ← required by main.lua, not auto-loaded
-    │       ├── 📄 core.lua, options.lua, events.lua, layouts.lua,
-    │       ├── 📄 rendering.lua, osc_init.lua, margin_utils.lua,
-    │       └── 📄 (…)
-    ├── 📄 thumbfast.lua                ← thumbnail previews
-    ├── 📄 acompressor.lua              ← audio compressor filter control
-    ├── 📄 mpv.conf
-    ├── 📄 input.conf
-    └── 📁 watch_later/
+📁 mpv/                              ← your mpv config directory
+├── 📁 fonts/
+│   └── 📄 modernz-icons.ttf
+├── 📁 script-opts/
+│   ├── 📄 modernz.conf              ← all ModernZ options (defaults included)
+│   └── 📄 modernz-locale.json       ← UI translations (optional)
+└── 📁 scripts/
+    ├── 📄 main.lua                  ← entry point (auto-loaded)
+    └── 📁 modules/                  ← required by main.lua, not auto-loaded
+        ├── 📄 core.lua, options.lua, events.lua, layouts.lua,
+        ├── 📄 rendering.lua, osc_init.lua, margin_utils.lua,
+        └── 📄 (…)
 ```
 
-> **How scripts load:** mpv auto-loads `scripts/*.lua`, and also `.lua` files placed directly in the config dir root (`thumbfast.lua`, `acompressor.lua`). `main.lua` resolves the `modules/` folder relative to its own path, so `modules/` must stay next to it. The modules are only `require`d by `main.lua` — they are not auto-loaded and must not be moved.
+Typical config-dir locations: `~/.config/mpv/` (Linux), `C:/Users/%username%/AppData/Roaming/mpv/` (Windows), `~/Library/Application Support/mpv/` (macOS).
 
-> **Non-portable setups:** to use this with a regular mpv install, copy `scripts/`, `fonts/`, and `script-opts/` into your mpv config dir
-> (`~/.config/mpv/`, `C:/Users/%username%/AppData/Roaming/mpv/`, or `~/Library/Application Support/mpv/`).
+> **How scripts load:** mpv auto-loads `scripts/*.lua` and `scripts/<subdir>/main.lua`. The `modules/` subdirectory has no `main.lua`, so its files are only `require`d by `main.lua` and must stay next to it. mpv prints a harmless `Cannot find main.* … modules` warning at startup — that is expected for this layout.
 
 ## Configuration
 
-- All options live in `script-opts/modernz.conf` — it ships with every default, so you can also just keep the lines you change.
-- Edit the file and restart mpv (or use the `script-opts` config-reload if you bind it).
+- All options live in `script-opts/modernz.conf` — it ships with every default, so you can just keep the lines you change.
+- Edit the file and restart mpv for changes to take effect.
 
 A quick reference of the most useful options:
 
@@ -221,18 +211,15 @@ y   script-message-to modernz osc-hide             # Hide OSC
 z   script-message-to modernz osc-idlescreen       # Toggle idle screen
 ```
 
-The bundled `portable_config/input.conf` already configures a few playback bindings:
-`z`/`x` adjust subtitle delay, `[`/`]` change speed, `LEFT`/`RIGHT` seek, and the left mouse button toggles play/pause.
-
 ## Translations
 
-The UI language is controlled by the `language` option in `modernz.conf` — this package sets it to Simplified Chinese (`language=zh`). Available languages: `ar`, `de`, `dk`, `en`, `es`, `fr`, `is`, `jp`, `pl`, `ru`, `zh`.
+The UI language is controlled by the `language` option in `modernz.conf` (e.g. `language=zh` for Simplified Chinese). Available languages: `ar`, `de`, `dk`, `en`, `es`, `fr`, `is`, `jp`, `pl`, `ru`, `zh`.
 
 To contribute or add a new language, see the [upstream translation guide](https://github.com/Samillion/ModernZ/blob/main/docs/TRANSLATIONS.md).
 
 ## Extras
 
-The package bundles two extra scripts (also placed in the config root):
+Two extra scripts are commonly used alongside ModernZ:
 
 - [thumbfast](https://github.com/po5/thumbfast) — frame-accurate thumbnail previews on the seekbar (`script-opts/thumbfast.conf` configures it).
 - `acompressor.lua` — on-screen control for the ffmpeg dynamic-range compressor filter. Toggle with `n`, adjust threshold with `F1`/`Shift+F1` and ratio with `F2`/`Shift+F2`.
@@ -243,16 +230,11 @@ The download button requires [yt-dlp](https://github.com/yt-dlp/yt-dlp) and ffmp
 
 ### Subtitles are pushed up and don't drop back down
 
-ModernZ's `sub_margins` feature raises subtitles by temporarily lowering `sub-pos` while the OSC is visible. On mpv **0.36+** the default `watch-later-options` includes `sub-pos`, so with position saving enabled (`save-position-on-quit=yes`) the *raised* value gets written to `watch_later/`. On the next play, mpv restores that raised `sub-pos`, ModernZ mistakes it for your real position, and the subtitle stays suspended above the bottom of the screen.
+ModernZ's `sub_margins` feature raises subtitles by temporarily lowering `sub-pos` while the OSC is visible. On mpv **0.36+** the default `watch-later-options` includes `sub-pos`, so with position saving enabled (`save-position-on-quit=yes`) the *raised* value can be written to the `watch_later/` file if you quit while the OSC is shown. On the next play, that raised `sub-pos` is restored and mistaken for your real position, so the subtitle stays suspended above the bottom.
 
-**Fix (already applied in this package):**
+**This is handled automatically — no `mpv.conf` change is needed.** The script removes `sub-pos` (and `osd-margin-y` when `osd_margins=yes`) from `watch-later-options` at load time, so the temporary raise is never persisted.
 
-```ini
-# portable_config/mpv.conf
-watch-later-options-remove=sub-pos
-```
-
-This removes `sub-pos` from what mpv saves/restores, so the temporary raise is never persisted. If you already have stale `watch_later/*` files containing a `sub-pos=` line, delete that line (or the file) once. If you use `osd_margins=yes` as well, add `watch-later-options-remove=osd-margin-y` too.
+> **If you already have a poisoned entry:** mpv restores a stale `sub-pos=` from an existing `watch_later/*` file regardless of the option list. Delete that line (or the file) once and it will not recur.
 
 ## History
 

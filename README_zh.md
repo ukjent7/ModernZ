@@ -4,7 +4,7 @@
 
 一款为 [mpv](https://mpv.io/) 设计的现代、精美的 OSC（屏幕显示控制条）。本项目是 ModernX 的分支，在保留 mpv 官方 OSC 核心规范的基础上加入了更多功能。
 
-本发行版内置了 **ModernZ（v0.3.3）的模块化重构版本**：原先单文件的 `main.lua` 被拆分成了职责清晰的 `modules/*.lua`（布局、渲染、事件、选项、样式、图标、语言、边距等模块），并与 **Windows 便携版 mpv** 打包在一起，开箱即用。
+本仓库维护的是 **ModernZ（v0.3.3）的模块化重构版本**：原先单文件的 `main.lua` 被拆分成了职责清晰的 `modules/*.lua`（布局、渲染、事件、选项、样式、图标、语言、边距等模块），全部由 `main.lua` 通过 `require` 引入。
 
 ![modernz_preview](https://github.com/user-attachments/assets/69a967ae-cf8a-4a92-9193-4799f901cd94)
 
@@ -130,41 +130,32 @@ nibble_current_color=#FFFFFF
 
 > **环境要求：** mpv **≥ 0.35**（文本测量使用 `osd_overlay.compute_bounds`；旧版本会优雅降级）。缩略图预览需要 [thumbfast](https://github.com/po5/thumbfast)；下载按钮需要 [yt-dlp](https://github.com/yt-dlp/yt-dlp) 与 ffmpeg。
 
-这个文件夹**本身就是播放器**，所有内容均已自带：
-
-1. **直接运行。** 双击 `mpv.exe` 即可（可用自带的 `mpv-register.bat` 注册文件关联，`mpv-unregister.bat` 取消关联）。
-2. **无需手动禁用官方 OSC。** `scripts/main.lua` 加载完成后会自动关闭官方 OSC，**不要**在 `mpv.conf` 里再写 `osc=no`。
-3. **原生标题栏（可选）。** `portable_config/mpv.conf` 已设置 `title-bar=no`，用 ModernZ 自绘的窗口控制按钮（关闭/最小化/最大化）替代原生标题栏。若不想要，删掉这一行即可。
+1. **复制脚本** —— 将 `scripts/main.lua` 连同它的 `scripts/modules/` 文件夹一起放入 mpv 的 `scripts` 目录。mpv 会自动加载 `main.lua`；`modules/` 里的文件只被它 `require`。
+2. **安装图标** —— 将 `fonts/modernz-icons.ttf` 复制到 mpv 的 `fonts` 目录。
+3. **配置** —— 将 `script-opts/modernz.conf` 复制到 mpv 的 `script-opts` 目录（按需修改）。
+4. **可选附件** —— `modernz-locale.json` 放到 `script-opts/`，`thumbfast.lua` 放到 `scripts/`，`thumbfast.conf` 放到 `script-opts/`。
+5. **无需手动禁用官方 OSC。** `main.lua` 加载完成后会自动关闭官方 OSC，**不要**在 `mpv.conf` 里再写 `osc=no`。
 
 ### 目录结构
 
 ```
-📁 mpv-v0.41.0/
-├── 📄 mpv.exe / mpv.com / vulkan-1.dll   ← 播放器本体
-├── 📄 mpv-register.bat / mpv-unregister.bat
-└── 📁 portable_config/                    ← mpv 配置目录（便携模式）
-    ├── 📁 fonts/
-    │   └── 📄 modernz-icons.ttf
-    ├── 📁 script-opts/
-    │   ├── 📄 modernz.conf             ← ModernZ 选项（含全部默认值）
-    │   ├── 📄 modernz-locale.json      ← 界面翻译
-    │   └── 📄 thumbfast.conf
-    ├── 📁 scripts/
-    │   ├── 📄 main.lua                 ← ModernZ 入口（自动加载）
-    │   └── 📁 modules/                 ← 仅被 main.lua require，不会被自动加载
-    │       ├── 📄 core.lua, options.lua, events.lua, layouts.lua,
-    │       ├── 📄 rendering.lua, osc_init.lua, margin_utils.lua,
-    │       └── 📄 (…)
-    ├── 📄 thumbfast.lua                ← 进度条缩略图
-    ├── 📄 acompressor.lua              ← 音频压缩器滤镜控制
-    ├── 📄 mpv.conf
-    ├── 📄 input.conf
-    └── 📁 watch_later/
+📁 mpv/                              ← 你的 mpv 配置目录
+├── 📁 fonts/
+│   └── 📄 modernz-icons.ttf
+├── 📁 script-opts/
+│   ├── 📄 modernz.conf              ← 全部 ModernZ 选项（含默认值）
+│   └── 📄 modernz-locale.json       ← 界面翻译（可选）
+└── 📁 scripts/
+    ├── 📄 main.lua                  ← 入口（自动加载）
+    └── 📁 modules/                  ← 仅被 main.lua require，不会被自动加载
+        ├── 📄 core.lua, options.lua, events.lua, layouts.lua,
+        ├── 📄 rendering.lua, osc_init.lua, margin_utils.lua,
+        └── 📄 (…)
 ```
 
-> **脚本加载方式：** mpv 会自动加载 `scripts/*.lua`，以及直接放在配置目录根部的 `.lua` 文件（如 `thumbfast.lua`、`acompressor.lua`）。`main.lua` 会相对自身路径解析 `modules/`，因此 `modules/` 必须与它放在同一目录，且不能单独移动（它们不是独立脚本，只被 `main.lua` 引用）。
+常见配置目录：Linux：`~/.config/mpv/`，Windows：`C:/Users/%username%/AppData/Roaming/mpv/`，macOS：`~/Library/Application Support/mpv/`。
 
-> **非便携安装：** 如果要在普通 mpv 安装中使用，把 `scripts/`、`fonts/`、`script-opts/` 复制到你的 mpv 配置目录即可（Linux：`~/.config/mpv/`，Windows：`C:/Users/%username%/AppData/Roaming/mpv/`，macOS：`~/Library/Application Support/mpv/`）。
+> **脚本加载方式：** mpv 会自动加载 `scripts/*.lua` 以及 `scripts/<子目录>/main.lua`。`modules/` 子目录里没有 `main.lua`，因此其中的文件只被 `main.lua` 引用，必须与它放在一起。启动时 mpv 会打印一条无害的 `Cannot find main.* … modules` 警告——这种目录布局下属正常现象。
 
 ## 配置
 
@@ -220,17 +211,15 @@ y   script-message-to modernz osc-hide             # 隐藏 OSC
 z   script-message-to modernz osc-idlescreen       # 切换待机画面
 ```
 
-自带的 `portable_config/input.conf` 已经配置了一些常用按键：`z`/`x` 调整字幕延迟，`[`/`]` 调整播放速度，`LEFT`/`RIGHT` 快进/快退，左键单击切换播放/暂停。
-
 ## 界面语言
 
-界面语言由 `modernz.conf` 中的 `language` 选项控制 —— 本包已设置为简体中文（`language=zh`）。可用的语言：`ar`、`de`、`dk`、`en`、`es`、`fr`、`is`、`jp`、`pl`、`ru`、`zh`。
+界面语言由 `modernz.conf` 中的 `language` 选项控制（例如 `language=zh` 即简体中文）。可用的语言：`ar`、`de`、`dk`、`en`、`es`、`fr`、`is`、`jp`、`pl`、`ru`、`zh`。
 
 如需贡献新语言，请参阅[上游翻译指南](https://github.com/Samillion/ModernZ/blob/main/docs/TRANSLATIONS.md)。
 
 ## 附带脚本
 
-本包额外附带两个脚本（同样位于配置目录根部）：
+两个常与 ModernZ 搭配使用的脚本：
 
 - [thumbfast](https://github.com/po5/thumbfast) —— 进度条上精确到帧的缩略图预览（配置在 `script-opts/thumbfast.conf`）。
 - `acompressor.lua` —— 在屏幕上控制 ffmpeg 动态范围压缩滤镜。`n` 开关，`F1`/`Shift+F1` 调整阈值，`F2`/`Shift+F2` 调整压缩比。
@@ -241,16 +230,11 @@ z   script-message-to modernz osc-idlescreen       # 切换待机画面
 
 ### 字幕被顶起，而且不会自动落回去
 
-ModernZ 的 `sub_margins` 功能会在 OSC 显示时，通过临时降低 `sub-pos` 来抬高字幕。而在 mpv **0.36+** 中，默认的 `watch-later-options` 已包含 `sub-pos`，因此只要开启了位置记忆（`save-position-on-quit=yes`），被抬高的值就会被写进 `watch_later/`。下次播放时 mpv 会恢复这个被抬高的 `sub-pos`，ModernZ 会把它误当成你真正设定的位置，于是字幕就一直悬在半空落不回去。
+ModernZ 的 `sub_margins` 功能会在 OSC 显示时，通过临时降低 `sub-pos` 来抬高字幕。而在 mpv **0.36+** 中，默认的 `watch-later-options` 已包含 `sub-pos`，因此只要开启了位置记忆（`save-position-on-quit=yes`），在 OSC 还显示着的时候退出，被抬高的值就会被写进 `watch_later/`。下次播放时这个被抬高的 `sub-pos` 被恢复，并被误当成你真正设定的位置，于是字幕就一直悬在半空落不回去。
 
-**解决办法（本包已默认应用）：**
+**该问题已由脚本自动处理，无需修改 `mpv.conf`。** 脚本在加载时会自动把 `sub-pos`（以及开启 `osd_margins=yes` 时的 `osd-margin-y`）从 `watch-later-options` 中移除，确保临时抬高永远不会被持久化。
 
-```ini
-# portable_config/mpv.conf
-watch-later-options-remove=sub-pos
-```
-
-这一行会把 `sub-pos` 从 mpv 的保存/恢复列表中移除，确保临时抬高不会被持久化。如果 `watch_later/` 中已有包含 `sub-pos=` 的旧记录，请把那一行（或整个文件）删除一次。如果同时开启了 `osd_margins=yes`，还需加上 `watch-later-options-remove=osd-margin-y`。
+> **如果你已经有被污染的记录：** 对于已存在的 `watch_later/*` 文件，mpv 会无视选项列表直接恢复其中的旧 `sub-pos=` 值。请把那一行（或整个文件）删除一次，之后不会再复发。
 
 ## 历史
 
