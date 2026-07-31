@@ -25,13 +25,15 @@ local state = core.state
 local thumbfast = core.thumbfast
 local user_opts = require("modules.options")
 
-local _control = require("modules.control")
-local request_tick = _control.request_tick
-local request_init = _control.request_init
-local request_init_resize = _control.request_init_resize
-local set_tick_delay = _control.set_tick_delay
+local request_tick = core.request_tick
+local request_init = core.request_init
+local request_init_resize = core.request_init_resize
+local set_tick_delay = core.set_tick_delay
 local _utils = require("modules.utils")
 local observe_cached = _utils.observe_cached
+local clear_thumbfast = _utils.clear_thumbfast
+local _string_utils = require("modules.string_utils")
+local replace_table = _string_utils.replace_table
 local _geometry_utils = require("modules.geometry_utils")
 local set_virt_mouse_area = _geometry_utils.set_virt_mouse_area
 local _margin_utils = require("modules.margin_utils")
@@ -129,10 +131,7 @@ observe_cached("window-maximized", request_init_resize)
 observe_cached("idle-active", request_tick)
 mp.observe_property("user-data/mpv/console/open", "bool", function(_, val)
     if val and user_opts.visibility == "auto" and not user_opts.showonselect and not state.keeponpause_active then
-        -- clear pending thumbnail
-        if thumbfast.width ~= 0 and thumbfast.height ~= 0 then
-            mp.commandv("script-message-to", "thumbfast", "clear")
-        end
+        clear_thumbfast()
         osc_visible(false)
         wc_visible(false)
     end
@@ -161,15 +160,13 @@ mp.observe_property("sub-pos", "native", function(_, value)
     end
 end)
 
--- mouse show/hide bindings
-mp.set_key_bindings({
-    {"mouse_move",              function() process_event("mouse_move", nil) end},
-    {"mouse_leave",             mouse_leave},
-}, "showhide", "force")
-mp.set_key_bindings({
-    {"mouse_move",              function() process_event("mouse_move", nil) end},
-    {"mouse_leave",             mouse_leave},
-}, "showhide_wc", "force")
+-- mouse show/hide bindings (same bindings for both bar sections)
+for _, section in ipairs({"showhide", "showhide_wc"}) do
+    mp.set_key_bindings({
+        {"mouse_move",              function() process_event("mouse_move", nil) end},
+        {"mouse_leave",             mouse_leave},
+    }, section, "force")
+end
 do_enable_keybindings()
 
 --mouse input bindings
@@ -269,8 +266,7 @@ mp.register_script_message("thumbfast-info", function(json)
     if type(data) ~= "table" or not data.width or not data.height then
         msg.error("thumbfast-info: received json didn't produce a table with thumbnail information")
     else
-        for k in pairs(thumbfast) do thumbfast[k] = nil end
-        for k, v in pairs(data) do thumbfast[k] = v end
+        replace_table(thumbfast, data)
     end
 end)
 
