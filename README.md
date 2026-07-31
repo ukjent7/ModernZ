@@ -237,6 +237,8 @@ See the [Color Customization](/docs/USER_OPTS.md#colors-and-style) section in th
 
 ## Installation
 
+> **Requirements:** mpv **≥ 0.35** (text measurement uses `osd_overlay.compute_bounds`; on older versions the OSC degrades gracefully — fixed-width timecodes, no title truncation). [thumbfast](https://github.com/po5/thumbfast) is optional but required for thumbnail previews. The download button additionally requires [yt-dlp](https://github.com/yt-dlp/yt-dlp) and ffmpeg.
+
 1. **Disable Stock OSC**
 
    - Add `osc=no` in your `mpv.conf`
@@ -244,7 +246,7 @@ See the [Color Customization](/docs/USER_OPTS.md#colors-and-style) section in th
 
 2. **Copy Files**
 
-   - Place `modernz.lua` in your mpv `scripts` directory
+   - Place the `modernz` folder in your mpv `scripts` directory — mpv auto-loads `modernz/main.lua` from subdirectories, and the `modules/` files are only `require`d by it
    - Place `modernz-icons.ttf` in your mpv `fonts` directory
    - (OPTIONAL) Place `modernz-locale.json` in your mpv `script-opts` directory
    - (OPTIONAL) Place `thumbfast.lua` in your mpv `scripts` directory
@@ -267,7 +269,10 @@ macOS:   ~/Library/Application Support/mpv/
 │   ├── 📄 modernz.conf
 │   └── 📄 modernz-locale.json (optional)
 └── 📁 scripts/
-    ├── 📄 modernz.lua
+    ├── 📁 modernz/
+    │   ├── 📄 main.lua
+    │   └── 📁 modules/
+    │       └── (…)         ← only required by main.lua, not auto-loaded
     └── 📄 thumbfast.lua (optional)
 ```
 
