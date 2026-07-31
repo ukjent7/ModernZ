@@ -10,18 +10,20 @@ local thumbfast = core.thumbfast
 local user_opts = require("modules.options")
 
 local _utils = require("modules.utils")
-local get_virt_scale_factor = _utils.get_virt_scale_factor
-local get_virt_mouse_pos = _utils.get_virt_mouse_pos
 local estimate_text_width = _utils.estimate_text_width
-local get_element_hitbox = _utils.get_element_hitbox
-local mouse_hit_coords = _utils.mouse_hit_coords
-local mouse_hit = _utils.mouse_hit
-local limit_range = _utils.limit_range
-local get_slider_ele_pos_for = _utils.get_slider_ele_pos_for
-local get_slider_value = _utils.get_slider_value
-local ass_append_alpha = _utils.ass_append_alpha
-local draw_tooltip = _utils.draw_tooltip
-local ass_draw_cir_cw = _utils.ass_draw_cir_cw
+local _geometry_utils = require("modules.geometry_utils")
+local get_virt_scale_factor = _geometry_utils.get_virt_scale_factor
+local get_virt_mouse_pos = _geometry_utils.get_virt_mouse_pos
+local get_element_hitbox = _geometry_utils.get_element_hitbox
+local mouse_hit_coords = _geometry_utils.mouse_hit_coords
+local mouse_hit = _geometry_utils.mouse_hit
+local limit_range = _geometry_utils.limit_range
+local get_slider_ele_pos_for = _geometry_utils.get_slider_ele_pos_for
+local get_slider_value = _geometry_utils.get_slider_value
+local _ass_utils = require("modules.ass_utils")
+local ass_append_alpha = _ass_utils.ass_append_alpha
+local draw_tooltip = _ass_utils.draw_tooltip
+local ass_draw_cir_cw = _ass_utils.ass_draw_cir_cw
 local _locale = require("modules.locale")
 local bidi = _locale.bidi
 local _styles = require("modules.styles")
@@ -701,8 +703,8 @@ end
 --
 -- Initialisation and Layout
 
+-- get_chapter is used internally only and stays as a local function above.
 return {
-    get_chapter = get_chapter,
     render_elements = render_elements,
     render_persistent_progress = render_persistent_progress,
 }

@@ -9,17 +9,20 @@ local osc_param = core.osc_param
 
 local user_opts = require("modules.options")
 
+local _string_utils = require("modules.string_utils")
+local contains = _string_utils.contains
 local _utils = require("modules.utils")
-local contains = _utils.contains
 local estimate_text_width = _utils.estimate_text_width
-local get_slider_value = _utils.get_slider_value
 local cache_enabled = _utils.cache_enabled
-local update_margins = _utils.update_margins
 local set_volume = _utils.set_volume
 local window_controls_enabled = _utils.window_controls_enabled
 local format_time = _utils.format_time
 local build_cache_seek_ranges = _utils.build_cache_seek_ranges
 local clear_text_width_cache = _utils.clear_text_width_cache
+local _geometry_utils = require("modules.geometry_utils")
+local get_slider_value = _geometry_utils.get_slider_value
+local _margin_utils = require("modules.margin_utils")
+local update_margins = _margin_utils.update_margins
 local _control = require("modules.control")
 local request_init = _control.request_init
 local _styles = require("modules.styles")
@@ -755,7 +758,7 @@ local function osc_init()
     update_margins()
 end
 
+-- bind_buttons is used internally only and stays as a local function above.
 return {
     osc_init = osc_init,
-    bind_buttons = bind_buttons,
 }

@@ -1,4 +1,10 @@
 -- modernz :: modules/utils.lua
+--
+-- Remaining after the module split: OSD submission/observation, text-width
+-- measurement (and its cache), time-code formatting, cache-range helpers,
+-- and window-control detection. Geometry/mouse math moved to
+-- geometry_utils.lua, ASS drawing helpers moved to ass_utils.lua, and margin
+-- management moved to margin_utils.lua.
 
 local msg = require "mp.msg"
 
@@ -12,33 +18,20 @@ local _constants = require("modules.constants")
 local platform = _constants.platform
 local UNICODE_MINUS = _constants.UNICODE_MINUS
 
--- Lazy access to osc_styles to avoid a circular dependency with styles.lua
--- (styles.lua requires utils.lua for contains(); utils.lua requires styles.lua
--- for osc_styles). We fetch styles lazily on first use instead of at load time.
-local _styles
+local _margin_utils = require("modules.margin_utils")
+local get_hidetimeout = _margin_utils.get_hidetimeout
+
+-- utils.lua depends on styles.lua for get_time_codes_width(), which needs
+-- the current osc_styles table. This is a plain one-directional require:
+-- styles.lua no longer requires utils.lua (it gets contains() from
+-- string_utils.lua instead), so there is no cycle here.
+local _styles = require("modules.styles")
 local function get_osc_styles()
-    if not _styles then _styles = require("modules.styles") end
     return _styles.get_osc_styles()
 end
 
 -- Private text width cache, owned by this module
 local text_width_cache = {}
-
-local function contains(list, item)
-    local t
-    if type(list) == "table" then
-        t = list
-    else
-        t = {}
-        for str in string.gmatch(list, '([^,]+)') do
-            t[#t + 1] = str:match("^%s*(.-)%s*$") -- trim spaces
-        end
-    end
-    for _, v in ipairs(t) do
-        if v == item then return true end
-    end
-    return false
-end
 
 local function kill_animation(anitype_key, anistart_key, animation_key)
     state[anitype_key]   = nil
@@ -64,53 +57,6 @@ local function observe_cached(property, callback)
         state[key] = value
         callback()
     end)
-end
-
--- scale factor for translating between real and virtual ASS coordinates
-local function get_virt_scale_factor()
-    if state.osd_dimensions.w == 0 or state.osd_dimensions.h == 0 then
-        return 0, 0
-    end
-    return osc_param.playresx / state.osd_dimensions.w,
-           osc_param.playresy / state.osd_dimensions.h
-end
-
-local function recently_touched()
-    if state.touchtime == nil then
-        return false
-    end
-    return state.touchtime + 1 >= mp.get_time()
-end
-
--- return mouse position in virtual ASS coordinates (playresx/y)
-local function get_virt_mouse_pos()
-    if recently_touched() then
-        local sx, sy = get_virt_scale_factor()
-        return state.last_touchX * sx, state.last_touchY * sy
-    elseif state.mouse_in_window then
-        local sx, sy = get_virt_scale_factor()
-        local x, y = mp.get_mouse_pos()
-        return x * sx, y * sy
-    else
-        return -1, -1
-    end
-end
-
-local function set_virt_mouse_area(x0, y0, x1, y1, name)
-    local sx, sy = get_virt_scale_factor()
-    mp.set_mouse_area(x0 / sx, y0 / sy, x1 / sx, y1 / sy, name)
-end
-
-local function scale_value(x0, x1, y0, y1, val)
-    local m = (y1 - y0) / (x1 - x0)
-    local b = y0 - (m * x0)
-    return (m * val) + b
-end
-
--- returns the position of an object on a one-dimensional axis,
--- from 0..1 (object to the "left") to 1..0 (object to the "right"), taking margin into account.
-local function get_align(align, frame, obj, margin)
-    return (frame / 2) + (((frame / 2) - margin - (obj / 2)) * align)
 end
 
 local text_measure_osd = mp.create_osd_overlay and mp.create_osd_overlay("ass-events") or nil
@@ -168,160 +114,6 @@ local function get_time_codes_width()
     return w ~= 0 and w or 120 + (state.tc_ms and 40 or 0)
 end
 
--- returns hitbox spanning coordinates (top left, bottom right corner)
--- according to alignment
-local function get_hitbox_coords(x, y, an, w, h)
-    local alignments = {
-      [1] = function () return x, y-h, x+w, y end,
-      [2] = function () return x-(w/2), y-h, x+(w/2), y end,
-      [3] = function () return x-w, y-h, x, y end,
-
-      [4] = function () return x, y-(h/2), x+w, y+(h/2) end,
-      [5] = function () return x-(w/2), y-(h/2), x+(w/2), y+(h/2) end,
-      [6] = function () return x-w, y-(h/2), x, y+(h/2) end,
-
-      [7] = function () return x, y, x+w, y+h end,
-      [8] = function () return x-(w/2), y, x+(w/2), y+h end,
-      [9] = function () return x-w, y, x, y+h end,
-    }
-
-    return alignments[an]()
-end
-
-local function get_element_hitbox(element)
-    return element.hitbox.x1, element.hitbox.y1, element.hitbox.x2, element.hitbox.y2
-end
-
-local function mouse_hit_coords(bX1, bY1, bX2, bY2)
-    local mX, mY = get_virt_mouse_pos()
-    return (mX >= bX1 and mX <= bX2 and mY >= bY1 and mY <= bY2)
-end
-
-local function mouse_hit(element)
-    return mouse_hit_coords(get_element_hitbox(element))
-end
-
-local function mouse_in_area(names)
-    if type(names) == "string" then names = {names} end
-    for _, name in ipairs(names) do
-        for _, cords in ipairs(osc_param.areas[name] or {}) do
-            if mouse_hit_coords(cords.x1, cords.y1, cords.x2, cords.y2) then
-                return true
-            end
-        end
-    end
-    return false
-end
-
-local function limit_range(min, max, val)
-    return math.max(min, math.min(max, val))
-end
-
--- translate value into element coordinates
-local function get_slider_ele_pos_for(element, val)
-    local ele_pos = scale_value(
-        element.slider.min.value, element.slider.max.value,
-        element.slider.min.ele_pos, element.slider.max.ele_pos,
-        val)
-
-    return limit_range(element.slider.min.ele_pos, element.slider.max.ele_pos, ele_pos)
-end
-
--- translates global (mouse) coordinates to value
-local function get_slider_value_at(element, glob_pos)
-    if element then
-        local val = scale_value(
-            element.slider.min.glob_pos, element.slider.max.glob_pos,
-            element.slider.min.value, element.slider.max.value,
-            glob_pos)
-
-        return limit_range(element.slider.min.value, element.slider.max.value, val)
-    end
-    -- fall back incase of loading errors
-    return 0
-end
-
--- get value at current mouse position
-local function get_slider_value(element)
-    return get_slider_value_at(element, get_virt_mouse_pos())
-end
-
--- multiplies two alpha values, formular can probably be improved
-local function mult_alpha(alphaA, alphaB)
-    return 255 - (((1-(alphaA/255)) * (1-(alphaB/255))) * 255)
-end
-
-local function add_area(name, x1, y1, x2, y2)
-    -- create area if needed
-    if osc_param.areas[name] == nil then
-        osc_param.areas[name] = {}
-    end
-    table.insert(osc_param.areas[name], {x1=x1, y1=y1, x2=x2, y2=y2})
-end
-
-local function ass_append_alpha(ass, alpha, modifier, inverse, anim_override)
-    local ar = {}
-
-    for ai, av in ipairs(alpha) do
-        av = mult_alpha(av, modifier)
-        local animpos = anim_override or state.animation
-        if animpos then
-            if inverse then
-                animpos = 255 - animpos
-            end
-            av = mult_alpha(av, animpos)
-        end
-        ar[ai] = av
-    end
-
-    ass:append(string.format("{\\1a&H%X&\\2a&H%X&\\3a&H%X&\\4a&H%X&}", ar[1], ar[2], ar[3], ar[4]))
-end
-
--- draw tooltip background box and label
-local function draw_tooltip(ass, tx, ty, width, style, label, alpha)
-    local fs = user_opts.tooltip_font_size
-    local ph, pv = 5, 3
-    local box_h = fs + 2 * pv
-    local min_w = box_h + 2 * ph
-    local box_w = math.max(width + 2 * ph, min_w)
-    -- draw tooltip box
-    ass:new_event()
-    ass:append("{\\rDefault\\alpha&H4D&}")
-    ass:pos(tx - box_w / 2, ty - fs - pv)
-    ass:an(7)
-    ass:append(get_osc_styles().tooltip_box)
-    ass:draw_start()
-    ass:round_rect_cw(0, 0, box_w, box_h, box_h / 2)
-    ass:draw_stop()
-    -- add tooltip
-    ass:new_event()
-    ass:append("{\\rDefault}")
-    ass:pos(tx, ty)
-    ass:an(2)
-    ass:append(style)
-    if alpha then ass_append_alpha(ass, alpha, 0) end
-    ass:append(label)
-end
-
-local function ass_draw_cir_cw(ass, x, y, r)
-    ass:round_rect_cw(x-r, y-r, x+r, y+r, r)
-end
-
-local function ass_draw_rr_h_cw(ass, x0, y0, x1, y1, r1, hexagon, r2)
-    if hexagon then
-        ass:hexagon_cw(x0, y0, x1, y1, r1, r2)
-    else
-        ass:round_rect_cw(x0, y0, x1, y1, r1, r2)
-    end
-end
-
-local function get_hidetimeout()
-    if user_opts.visibility == "always" then
-        return -1 -- disable autohide
-    end
-    return user_opts.hidetimeout
-end
-
 local function get_touchtimeout()
     if state.touchtime == nil then
         return 0
@@ -331,75 +123,6 @@ end
 
 local function cache_enabled()
     return state.demuxer_cache_state and #state.demuxer_cache_state["seekable-ranges"] > 0
-end
-
-local function set_margin_offset(prop, offset)
-    if offset > 0 then
-        if not state[prop] then
-            state[prop] = mp.get_property_number(prop)
-        end
-        mp.set_property_number(prop, state[prop] + offset)
-    elseif state[prop] then
-        mp.set_property_number(prop, state[prop])
-        state[prop] = nil
-    end
-end
-
-local function reset_margins()
-    -- restore subtitle position if it was changed
-    if state.osc_adjusted_subpos ~= nil then
-        mp.set_property_number("sub-pos", state.user_subpos)
-        state.osc_adjusted_subpos = nil
-    end
-    set_margin_offset("osd-margin-y", 0)
-end
-
-local function update_margins()
-    local use_margins = get_hidetimeout() < 0 or user_opts.dynamic_margins
-    local top_vis = state.wc_visible
-    local bottom_vis = state.osc_visible
-    local margins = {
-        l = 0,
-        r = 0,
-        t = (use_margins and top_vis) and osc_param.video_margins.t or 0,
-        b = (use_margins and bottom_vis) and osc_param.video_margins.b or 0,
-    }
-
-    -- raise amount is based on OSC height
-    if user_opts.sub_margins and mp.get_property_native("sid") then
-        if margins.b > 0 then
-            local raise_percent = margins.b * 100
-            -- only raise if subs are low enough that they would overlap the OSC
-            if state.user_subpos >= (100 - raise_percent) then
-                local adjusted = math.floor((1 - margins.b) * 100)
-                if adjusted < 0 then adjusted = state.user_subpos end
-                state.osc_adjusted_subpos = adjusted
-                mp.set_property_number("sub-pos", adjusted)
-            else
-                -- sub pos is high; do nothing
-                state.osc_adjusted_subpos = nil
-            end
-        else
-            -- restore original sub position
-            if state.osc_adjusted_subpos ~= nil then
-                mp.set_property_number("sub-pos", state.user_subpos)
-                state.osc_adjusted_subpos = nil
-            end
-        end
-    end
-
-    if user_opts.osd_margins then
-        local align = mp.get_property("osd-align-y")
-        local osd_margin = 0
-        if align == "top" and top_vis then
-            osd_margin = margins.t
-        elseif align == "bottom" and bottom_vis then
-            osd_margin = margins.b
-        end
-        set_margin_offset("osd-margin-y", osd_margin * osc_param.playresy)
-    end
-
-    mp.set_property_native("user-data/osc/margins", margins)
 end
 
 local function render_wipe(osd)
@@ -469,39 +192,13 @@ local function clear_text_width_cache()
 end
 
 return {
-    contains = contains,
     kill_animation = kill_animation,
     set_osd = set_osd,
     observe_cached = observe_cached,
-    get_virt_scale_factor = get_virt_scale_factor,
-    recently_touched = recently_touched,
-    get_virt_mouse_pos = get_virt_mouse_pos,
-    set_virt_mouse_area = set_virt_mouse_area,
-    scale_value = scale_value,
-    get_align = get_align,
     estimate_text_width = estimate_text_width,
     get_time_codes_width = get_time_codes_width,
-    get_hitbox_coords = get_hitbox_coords,
-    get_element_hitbox = get_element_hitbox,
-    mouse_hit_coords = mouse_hit_coords,
-    mouse_hit = mouse_hit,
-    mouse_in_area = mouse_in_area,
-    limit_range = limit_range,
-    get_slider_ele_pos_for = get_slider_ele_pos_for,
-    get_slider_value_at = get_slider_value_at,
-    get_slider_value = get_slider_value,
-    mult_alpha = mult_alpha,
-    add_area = add_area,
-    ass_append_alpha = ass_append_alpha,
-    draw_tooltip = draw_tooltip,
-    ass_draw_cir_cw = ass_draw_cir_cw,
-    ass_draw_rr_h_cw = ass_draw_rr_h_cw,
-    get_hidetimeout = get_hidetimeout,
     get_touchtimeout = get_touchtimeout,
     cache_enabled = cache_enabled,
-    set_margin_offset = set_margin_offset,
-    reset_margins = reset_margins,
-    update_margins = update_margins,
     render_wipe = render_wipe,
     set_volume = set_volume,
     window_controls_enabled = window_controls_enabled,

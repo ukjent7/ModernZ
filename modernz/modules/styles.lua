@@ -8,8 +8,8 @@ local state = core.state
 local user_opts = require("modules.options")
 
 local _icons = require("modules.icons")
-local _utils = require("modules.utils")
-local contains = _utils.contains
+local _string_utils = require("modules.string_utils")
+local contains = _string_utils.contains
 
 -- Private module-owned data
 local osc_styles = {}

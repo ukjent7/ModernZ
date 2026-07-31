@@ -111,31 +111,8 @@ local state = {
     chapter_title_max_w = nil,
 }
 
---
--- Event bus — lightweight pub/sub for loose module coupling.
--- Modules can subscribe to named events and emit notifications without
--- holding direct references to each other.
---
-local listeners = {}
-
-local function on(event, callback)
-    listeners[event] = listeners[event] or {}
-    table.insert(listeners[event], callback)
-end
-
-local function emit(event, ...)
-    local cbs = listeners[event]
-    if cbs then
-        for _, cb in ipairs(cbs) do
-            cb(...)
-        end
-    end
-end
-
 return {
     state = state,
     osc_param = osc_param,
     thumbfast = thumbfast,
-    on = on,
-    emit = emit,
 }

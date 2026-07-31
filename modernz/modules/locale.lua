@@ -116,11 +116,12 @@ local function get_locale()
     return locale
 end
 
+-- get_locale_from_json is used internally only (by load_locale_file) and
+-- stays as a local function above.
 return {
     language = language,
     bidi = bidi,
     get_locale = get_locale,
-    get_locale_from_json = get_locale_from_json,
     load_locale_file = load_locale_file,
     set_osc_locale = set_osc_locale,
 }

@@ -13,17 +13,19 @@ local user_opts = require("modules.options")
 local _utils = require("modules.utils")
 local kill_animation = _utils.kill_animation
 local set_osd = _utils.set_osd
-local get_virt_mouse_pos = _utils.get_virt_mouse_pos
-local set_virt_mouse_area = _utils.set_virt_mouse_area
-local scale_value = _utils.scale_value
-local mouse_hit = _utils.mouse_hit
-local mouse_in_area = _utils.mouse_in_area
-local get_hidetimeout = _utils.get_hidetimeout
 local get_touchtimeout = _utils.get_touchtimeout
-local reset_margins = _utils.reset_margins
-local update_margins = _utils.update_margins
 local render_wipe = _utils.render_wipe
 local window_controls_enabled = _utils.window_controls_enabled
+local _geometry_utils = require("modules.geometry_utils")
+local get_virt_mouse_pos = _geometry_utils.get_virt_mouse_pos
+local set_virt_mouse_area = _geometry_utils.set_virt_mouse_area
+local scale_value = _geometry_utils.scale_value
+local mouse_hit = _geometry_utils.mouse_hit
+local mouse_in_area = _geometry_utils.mouse_in_area
+local _margin_utils = require("modules.margin_utils")
+local get_hidetimeout = _margin_utils.get_hidetimeout
+local reset_margins = _margin_utils.reset_margins
+local update_margins = _margin_utils.update_margins
 local _control = require("modules.control")
 local request_tick = _control.request_tick
 local request_init = _control.request_init
@@ -704,11 +706,12 @@ end
 
 set_tick(tick)
 
+-- Only symbols actually consumed by other modules (main.lua) are exported.
+-- show_bar, hide_bar, set_bar_visible, element_has_action, has_click_action,
+-- has_wheel_action, has_mid_action, refresh_input_area, enable_osc, render,
+-- and always_on are used internally only and stay as local functions above.
 return {
-    show_bar = show_bar,
-    hide_bar = hide_bar,
     update_tracklist = update_tracklist,
-    set_bar_visible = set_bar_visible,
     osc_visible = osc_visible,
     wc_visible = wc_visible,
     show_wc = show_wc,
@@ -718,16 +721,8 @@ return {
     mouse_leave = mouse_leave,
     handle_touch = handle_touch,
     reset_timeout = reset_timeout,
-    element_has_action = element_has_action,
-    has_click_action = has_click_action,
-    has_wheel_action = has_wheel_action,
-    has_mid_action = has_mid_action,
-    refresh_input_area = refresh_input_area,
     process_event = process_event,
     do_enable_keybindings = do_enable_keybindings,
-    enable_osc = enable_osc,
-    render = render,
-    always_on = always_on,
     visibility_mode = visibility_mode,
     idlescreen_visibility = idlescreen_visibility,
 }

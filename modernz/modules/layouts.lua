@@ -7,12 +7,12 @@ local osc_param = core.osc_param
 local user_opts = require("modules.options")
 
 local _utils = require("modules.utils")
-local contains = _utils.contains
-local get_align = _utils.get_align
 local get_time_codes_width = _utils.get_time_codes_width
-local get_hitbox_coords = _utils.get_hitbox_coords
-local add_area = _utils.add_area
 local window_controls_enabled = _utils.window_controls_enabled
+local _geometry_utils = require("modules.geometry_utils")
+local get_align = _geometry_utils.get_align
+local get_hitbox_coords = _geometry_utils.get_hitbox_coords
+local add_area = _geometry_utils.add_area
 local _elements = require("modules.elements")
 local new_element = _elements.new_element
 local add_layout = _elements.add_layout
@@ -21,6 +21,8 @@ local _control = require("modules.control")
 local request_init = _control.request_init
 local _constants = require("modules.constants")
 local window_control_box_width = _constants.window_control_box_width
+local _string_utils = require("modules.string_utils")
+local contains = _string_utils.contains
 local _styles = require("modules.styles")
 local osc_color_convert = _styles.osc_color_convert
 local osc_styles = _styles.get_osc_styles()
@@ -1173,11 +1175,11 @@ local function get_layouts()
     return layouts
 end
 
+-- setup_bg_elements and layout_speed_menu are used internally only and stay
+-- as local functions above.
 return {
     window_controls = window_controls,
-    setup_bg_elements = setup_bg_elements,
     get_speed_presets = get_speed_presets,
-    layout_speed_menu = layout_speed_menu,
     toggle_speed_menu = toggle_speed_menu,
     close_speed_menu = close_speed_menu,
     get_layouts = get_layouts,

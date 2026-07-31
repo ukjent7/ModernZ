@@ -11,8 +11,10 @@ local osc_styles = _styles.get_osc_styles()
 
 local _utils = require("modules.utils")
 local estimate_text_width = _utils.estimate_text_width
-local get_hitbox_coords = _utils.get_hitbox_coords
-local ass_draw_rr_h_cw = _utils.ass_draw_rr_h_cw
+local _geometry_utils = require("modules.geometry_utils")
+local get_hitbox_coords = _geometry_utils.get_hitbox_coords
+local _ass_utils = require("modules.ass_utils")
+local ass_draw_rr_h_cw = _ass_utils.ass_draw_rr_h_cw
 
 -- Private elements table, owned by this module
 local elements = {}
