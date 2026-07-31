@@ -68,6 +68,7 @@ local state = {
     osd_dimensions = {w = 0, h = 0, aspect = 0},
     osd_scale_by_window = false,
     file_loaded = false,
+    file_loaded_time = nil, -- when the current file finished loading (see the "seek" handler in main.lua)
     enabled = true,
     input_enabled = true,
     showhide_enabled = false,

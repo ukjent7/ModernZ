@@ -24,8 +24,6 @@ local _ass_utils = require("modules.ass_utils")
 local ass_append_alpha = _ass_utils.ass_append_alpha
 local draw_tooltip = _ass_utils.draw_tooltip
 local ass_draw_cir_cw = _ass_utils.ass_draw_cir_cw
-local _locale = require("modules.locale")
-local bidi = _locale.bidi
 local _styles = require("modules.styles")
 local osc_color_convert = _styles.osc_color_convert
 local osc_styles = _styles.get_osc_styles()
@@ -661,7 +659,8 @@ local function render_elements(master_ass, osc_vis, wc_vis)
                     end
 
                     if tooltiplabel then
-                        draw_tooltip(elem_ass, tx, ty, tooltip_width, element.tooltip_style, bidi.fsi .. tooltiplabel .. bidi.pdi)
+                        -- bidi isolation is applied inside draw_tooltip
+                        draw_tooltip(elem_ass, tx, ty, tooltip_width, element.tooltip_style, tooltiplabel)
                     end
                 end
             end

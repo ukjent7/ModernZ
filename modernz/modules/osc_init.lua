@@ -751,6 +751,10 @@ local function osc_init()
     end
 
     -- cache seekbar elements
+    -- Note: these name-based lookups must happen BEFORE prepare_elements(),
+    -- which re-keys the elements table into a layer-sorted array and drops the
+    -- name keys. The references stored here are the element objects themselves,
+    -- so they stay valid after the table is re-keyed.
     state.persistent_seekbar_element = elements["persistent_seekbar"]
     state.seekbar_element = elements["seekbar"]
 

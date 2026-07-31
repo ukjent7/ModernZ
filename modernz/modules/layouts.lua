@@ -123,6 +123,11 @@ local function setup_bg_elements(posX, posY, osc_w, osc_h, osc_alpha3, wc_alpha3
     lo.alpha[3] = osc_alpha3
 
     if window_controls_enabled() and (user_opts.show_window_title or user_opts.window_controls) then
+        -- Top bar fade background. The negative height (-1) with an=7 is
+        -- deliberate: the box's bottom edge sits at y=-100 (just above the
+        -- playarea) and it extends upward off-screen, so the window-fade
+        -- gradient only ever covers the strip above the visible bar. Do not
+        -- "fix" the geometry to a positive height without re-testing.
         new_element("window_bar_alpha_bg", "box")
         lo = add_layout("window_bar_alpha_bg")
         lo.geometry = {x = posX, y = -100, an = 7, w = osc_w, h = -1}
@@ -130,6 +135,42 @@ local function setup_bg_elements(posX, posY, osc_w, osc_h, osc_alpha3, wc_alpha3
         lo.layer = 10
         lo.group = "top"
         lo.alpha[3] = wc_alpha3
+    end
+end
+
+-- Shared seekbar + persistent progress block for the default/compact/mini
+-- layouts. seekbar_y is the vertical center of the seekbar (refY - offset);
+-- the persistent progress line (if enabled) always sits on refY (screen bottom).
+local function setup_seekbar(refX, refY, seekbar_y)
+    local lo
+
+    local seekbarbg = new_element("seekbarbg", "box")
+    seekbarbg.visible = user_opts.nibbles_style ~= "gap"
+    lo = add_layout("seekbarbg")
+    local seekbar_bg_h = seekbar_height_style.height
+    lo.geometry = {x = refX, y = seekbar_y, an = 5, w = osc_param.playresx - 30, h = seekbar_bg_h}
+    lo.layer = 15
+    lo.style = osc_styles.seekbar_bg
+    lo.box.radius = user_opts.slider_rounded_corners and seekbar_height_style.radius or 0
+    lo.alpha[1] = 128
+
+    lo = add_layout("seekbar")
+    local seekbar_h = 18
+    lo.geometry = {x = refX, y = seekbar_y, an = 5, w = osc_param.playresx - 30, h = seekbar_h}
+    lo.layer = 49
+    lo.style = osc_styles.seekbar_fg
+    lo.slider.handle_color = user_opts.seek_handle_color
+    lo.slider.handle_border = user_opts.seek_handle_border_color
+    lo.slider.gap = (seekbar_h - seekbar_bg_h) / 2.0
+    lo.slider.radius = user_opts.slider_rounded_corners and seekbar_height_style.radius or 0
+    lo.slider.tooltip_an = 2
+
+    if user_opts.persistent_progress or state.persistent_progress_toggle then
+        lo = add_layout("persistent_seekbar")
+        lo.geometry = {x = refX, y = refY, an = 5, w = osc_param.playresx, h = user_opts.persistent_progress_height}
+        lo.style = osc_styles.seekbar_fg
+        lo.slider.gap = (seekbar_h - seekbar_bg_h) / 2.0
+        lo.slider.tooltip_an = 0
     end
 end
 
@@ -352,34 +393,7 @@ layouts["default"] = function ()
     local refY = posY
 
     -- seekbar
-    ne = new_element("seekbarbg", "box")
-    ne.visible = user_opts.nibbles_style ~= "gap"
-    lo = add_layout("seekbarbg")
-    local seekbar_bg_h = seekbar_height_style.height
-    lo.geometry = {x = refX, y = refY - user_opts.osc_height, an = 5, w = osc_geo.w - 30, h = seekbar_bg_h}
-    lo.layer = 15
-    lo.style = osc_styles.seekbar_bg
-    lo.box.radius = user_opts.slider_rounded_corners and seekbar_height_style.radius or 0
-    lo.alpha[1] = 128
-
-    lo = add_layout("seekbar")
-    local seekbar_h = 18
-    lo.geometry = {x = refX, y = refY - user_opts.osc_height, an = 5, w = osc_geo.w - 30, h = seekbar_h}
-    lo.layer = 49
-    lo.style = osc_styles.seekbar_fg
-    lo.slider.handle_color = user_opts.seek_handle_color
-    lo.slider.handle_border = user_opts.seek_handle_border_color
-    lo.slider.gap = (seekbar_h - seekbar_bg_h) / 2.0
-    lo.slider.radius = user_opts.slider_rounded_corners and seekbar_height_style.radius or 0
-    lo.slider.tooltip_an = 2
-
-    if user_opts.persistent_progress or state.persistent_progress_toggle then
-        lo = add_layout("persistent_seekbar")
-        lo.geometry = {x = refX, y = refY, an = 5, w = osc_geo.w, h = user_opts.persistent_progress_height}
-        lo.style = osc_styles.seekbar_fg
-        lo.slider.gap = (seekbar_h - seekbar_bg_h) / 2.0
-        lo.slider.tooltip_an = 0
-    end
+    setup_seekbar(refX, refY, refY - user_opts.osc_height)
 
     local audio_track = state.audio_track_count > 0
     local subtitle_track = state.sub_track_count > 0
@@ -633,34 +647,7 @@ layouts["compact"] = function ()
     local refY = posY
 
     -- seekbar
-    ne = new_element("seekbarbg", "box")
-    ne.visible = user_opts.nibbles_style ~= "gap"
-    lo = add_layout("seekbarbg")
-    local seekbar_bg_h = seekbar_height_style.height
-    lo.geometry = {x = refX, y = refY - user_opts.osc_height, an = 5, w = osc_geo.w - 30, h = seekbar_bg_h}
-    lo.layer = 15
-    lo.style = osc_styles.seekbar_bg
-    lo.box.radius = user_opts.slider_rounded_corners and seekbar_height_style.radius or 0
-    lo.alpha[1] = 128
-
-    lo = add_layout("seekbar")
-    local seekbar_h = 18
-    lo.geometry = {x = refX, y = refY - user_opts.osc_height, an = 5, w = osc_geo.w - 30, h = seekbar_h}
-    lo.layer = 49
-    lo.style = osc_styles.seekbar_fg
-    lo.slider.handle_color = user_opts.seek_handle_color
-    lo.slider.handle_border = user_opts.seek_handle_border_color
-    lo.slider.gap = (seekbar_h - seekbar_bg_h) / 2.0
-    lo.slider.radius = user_opts.slider_rounded_corners and seekbar_height_style.radius or 0
-    lo.slider.tooltip_an = 2
-
-    if user_opts.persistent_progress or state.persistent_progress_toggle then
-        lo = add_layout("persistent_seekbar")
-        lo.geometry = {x = refX, y = refY, an = 5, w = osc_geo.w, h = user_opts.persistent_progress_height}
-        lo.style = osc_styles.seekbar_fg
-        lo.slider.gap = (seekbar_h - seekbar_bg_h) / 2.0
-        lo.slider.tooltip_an = 0
-    end
+    setup_seekbar(refX, refY, refY - user_opts.osc_height)
 
     local time_codes_width = get_time_codes_width()
     local chapter_title_y, title_y
@@ -845,34 +832,7 @@ layouts["mini"] = function ()
     local refY = posY
 
     -- seekbar
-    ne = new_element("seekbarbg", "box")
-    ne.visible = user_opts.nibbles_style ~= "gap"
-    lo = add_layout("seekbarbg")
-    local seekbar_bg_h = seekbar_height_style.height
-    lo.geometry = {x = refX, y = refY - first_row_y - second_row_y, an = 5, w = osc_geo.w - 30, h = seekbar_bg_h}
-    lo.layer = 15
-    lo.style = osc_styles.seekbar_bg
-    lo.box.radius = user_opts.slider_rounded_corners and seekbar_height_style.radius or 0
-    lo.alpha[1] = 128
-
-    lo = add_layout("seekbar")
-    local seekbar_h = 18
-    lo.geometry = {x = refX, y = refY - first_row_y - second_row_y, an = 5, w = osc_geo.w - 30, h = seekbar_h}
-    lo.layer = 49
-    lo.style = osc_styles.seekbar_fg
-    lo.slider.handle_color = user_opts.seek_handle_color
-    lo.slider.handle_border = user_opts.seek_handle_border_color
-    lo.slider.gap = (seekbar_h - seekbar_bg_h) / 2.0
-    lo.slider.radius = user_opts.slider_rounded_corners and seekbar_height_style.radius or 0
-    lo.slider.tooltip_an = 2
-
-    if user_opts.persistent_progress or state.persistent_progress_toggle then
-        lo = add_layout("persistent_seekbar")
-        lo.geometry = {x = refX, y = refY, an = 5, w = osc_geo.w, h = user_opts.persistent_progress_height}
-        lo.style = osc_styles.seekbar_fg
-        lo.slider.gap = (seekbar_h - seekbar_bg_h) / 2.0
-        lo.slider.tooltip_an = 0
-    end
+    setup_seekbar(refX, refY, refY - first_row_y - second_row_y)
 
     -- left side buttons
     local start_x = 37
@@ -1023,34 +983,7 @@ layouts["seekbar"] = function ()
     local refY = posY
 
     -- seekbar
-    ne = new_element("seekbarbg", "box")
-    ne.visible = user_opts.nibbles_style ~= "gap"
-    lo = add_layout("seekbarbg")
-    local seekbar_bg_h = seekbar_height_style.height
-    lo.geometry = {x = refX, y = refY - first_row_y, an = 5, w = osc_geo.w - 30, h = seekbar_bg_h}
-    lo.layer = 15
-    lo.style = osc_styles.seekbar_bg
-    lo.box.radius = user_opts.slider_rounded_corners and seekbar_height_style.radius or 0
-    lo.alpha[1] = 128
-
-    lo = add_layout("seekbar")
-    local seekbar_h = 18
-    lo.geometry = {x = refX, y = refY - first_row_y, an = 5, w = osc_geo.w - 30, h = seekbar_h}
-    lo.layer = 49
-    lo.style = osc_styles.seekbar_fg
-    lo.slider.handle_color = user_opts.seek_handle_color
-    lo.slider.handle_border = user_opts.seek_handle_border_color
-    lo.slider.gap = (seekbar_h - seekbar_bg_h) / 2.0
-    lo.slider.radius = user_opts.slider_rounded_corners and seekbar_height_style.radius or 0
-    lo.slider.tooltip_an = 2
-
-    if user_opts.persistent_progress or state.persistent_progress_toggle then
-        lo = add_layout("persistent_seekbar")
-        lo.geometry = {x = refX, y = refY, an = 5, w = osc_geo.w, h = user_opts.persistent_progress_height}
-        lo.style = osc_styles.seekbar_fg
-        lo.slider.gap = (seekbar_h - seekbar_bg_h) / 2.0
-        lo.slider.tooltip_an = 0
-    end
+    setup_seekbar(refX, refY, refY - first_row_y)
 
     -- time codes
     local time_codes_width = get_time_codes_width()

@@ -13,6 +13,8 @@ local _styles = require("modules.styles")
 local function get_osc_styles()
     return _styles.get_osc_styles()
 end
+local _locale = require("modules.locale")
+local bidi = _locale.bidi
 
 -- multiplies two alpha values, formular can probably be improved
 local function mult_alpha(alphaA, alphaB)
@@ -60,7 +62,9 @@ local function draw_tooltip(ass, tx, ty, width, style, label, alpha)
     ass:an(2)
     ass:append(style)
     if alpha then ass_append_alpha(ass, alpha, 0) end
-    ass:append(label)
+    -- wrap the label in bidi isolates so mixed-direction text (e.g. time codes
+    -- in an RTL locale) renders in a stable order
+    ass:append(bidi.fsi .. label .. bidi.pdi)
 end
 
 local function ass_draw_cir_cw(ass, x, y, r)

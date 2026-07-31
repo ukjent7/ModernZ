@@ -20,17 +20,22 @@ local function get_ytdl_format()
     return fmt ~= "" and ("-f " .. fmt) or "-f bestvideo+bestaudio/best"
 end
 
-local function exec(args, callback)
+local function exec(args, callback, timeout)
     for i = #args, 1, -1 do
         if args[i] == nil or args[i] == "" then table.remove(args, i) end
     end
     msg.info("Executing: " .. table.concat(args, " "))
-    mp.command_native_async({
+    local cmd = {
         name = "subprocess",
         args = args,
         capture_stdout = true,
-        capture_stderr = true
-    }, callback)
+        capture_stderr = true,
+    }
+    -- optional timeout in ms (0/nil = no timeout); prevents silent background
+    -- probes (e.g. yt-dlp size approximation) from hanging forever. Unsupported
+    -- on mpv < 0.36, where the field is simply ignored.
+    if timeout then cmd.timeout = timeout end
+    mp.command_native_async(cmd, callback)
 end
 
 local function check_path_url()
@@ -82,7 +87,7 @@ local function check_path_url()
                     end
                 end
                 request_tick()
-            end)
+            end, 30000)
         end
     end
 end

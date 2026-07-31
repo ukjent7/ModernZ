@@ -55,8 +55,9 @@ local function request_init_resize()
 end
 
 local function set_tick_delay(_, display_fps)
-    -- may be nil if unavailable or 0 fps is reported
-    if not display_fps or not user_opts.tick_delay_follow_display_fps then
+    -- may be nil if unavailable, or 0 if a display reports 0 fps; guard both
+    -- so a stale 0 can't produce tick_delay = 1/0 = inf
+    if not display_fps or display_fps <= 0 or not user_opts.tick_delay_follow_display_fps then
         tick_delay = user_opts.tick_delay
         return
     end

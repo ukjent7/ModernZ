@@ -72,6 +72,7 @@ end)
 mp.register_event("file-loaded", function()
     is_image() -- check if file is an image
     state.file_loaded = true
+    state.file_loaded_time = mp.get_time()
     check_path_url()
     local oos = user_opts.osc_on_start
     if oos == "bottom" or oos == "both" then show_osc() end
@@ -101,10 +102,14 @@ observe_cached("duration", function ()
     end
 end)
 mp.register_event("seek", function()
-    if state.file_loaded then
-        state.file_loaded = false
-        return
-    end
+    -- Swallow the automatic seek mpv performs when loading/resuming a file so
+    -- the OSC doesn't flash on load. The flag is cleared on every seek and only
+    -- honored within a short window after file-loaded, so a lingering flag can
+    -- never swallow a later user-initiated seek.
+    local is_load_seek = state.file_loaded and
+        (mp.get_time() - (state.file_loaded_time or 0)) <= 3.0
+    state.file_loaded = false
+    if is_load_seek then return end
     if user_opts.osc_on_seek and not (state.file_loop and mp.get_property_number("time-pos", -1) == 0) then
         show_osc()
     end

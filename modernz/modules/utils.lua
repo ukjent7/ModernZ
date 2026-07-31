@@ -105,7 +105,14 @@ local function get_time_codes_width()
 
     local function time_fmt(s)
         local has_h = (s >= 3600) or user_opts.time_format == "fixed"
-        local base = has_h and (s >= 36000 and "88" or "8") .. ":88:88" or (s >= 600 and "88" or "8") .. ":88"
+        local base
+        if has_h then
+            -- hours shown as "8" or "88" depending on whether they reach 2 digits
+            base = (s >= 36000 and "88" or "8") .. ":88:88"
+        else
+            -- minutes shown as "8" or "88" depending on whether they reach 2 digits
+            base = (s >= 600 and "88" or "8") .. ":88"
+        end
         return base .. (state.tc_ms and ".888" or "")
     end
 
@@ -122,7 +129,10 @@ local function get_touchtimeout()
 end
 
 local function cache_enabled()
-    return state.demuxer_cache_state and #state.demuxer_cache_state["seekable-ranges"] > 0
+    -- demuxer-cache-state can arrive as an empty table (no demuxer cache yet),
+    -- so guard both the table and the "seekable-ranges" key before taking its length.
+    local dcs = state.demuxer_cache_state
+    return dcs and dcs["seekable-ranges"] and #dcs["seekable-ranges"] > 0
 end
 
 local function render_wipe(osd)

@@ -449,7 +449,9 @@ local function render()
     run_fade("wc_anitype", "wc_anistart", "wc_animation", wc_visible)
 
     --mouse show/hide area
-    for _, cords in pairs(osc_param.areas["showhide"]) do
+    -- areas can be empty before the first osc_init() has laid out the bars;
+    -- guard the table so a tick never trips over pairs(nil)
+    for _, cords in pairs(osc_param.areas["showhide"] or {}) do
         set_virt_mouse_area(cords.x1, cords.y1, cords.x2, cords.y2, "showhide")
     end
     if osc_param.areas["showhide_wc"] then
@@ -488,6 +490,11 @@ local function render()
     refresh_input_area()
 
     update_input_area("window-controls", state.wc_visible, "windowcontrols_buttons", function() mp.enable_key_bindings("window-controls") end)
+    -- The "window-controls-title" binding section is intentionally never
+    -- defined with set_key_bindings (see main.lua). It exists only so the
+    -- title area claims the mouse input region with "allow-vo-dragging",
+    -- letting clicks fall through to the window manager (drag-to-move) instead
+    -- of triggering mpv's default bindings. Do not add bindings to it.
     update_input_area("window-controls-title", state.wc_visible, "windowcontrols_title", function() mp.enable_key_bindings("window-controls-title", "allow-vo-dragging") end)
     update_input_area("window-controls-ontop", state.wc_visible, "windowcontrols_ontop", function() mp.enable_key_bindings("window-controls-ontop") end)
 

@@ -21,6 +21,9 @@ local function validate_user_opts()
     if user_opts.seek_handle_size < 0 then
         msg.warn("seek_handle_size must be 0 or higher. Setting it to 0 (minimum).")
         user_opts.seek_handle_size = 0
+    elseif user_opts.seek_handle_size > 1 then
+        msg.warn("seek_handle_size must be 1 or lower. Setting it to 1 (maximum).")
+        user_opts.seek_handle_size = 1
     end
 
     local function validate_string_opt(key, valid, default)
@@ -34,6 +37,13 @@ local function validate_user_opts()
     validate_string_opt("volume_control_type", {"linear", "logarithmic"}, "linear")
     validate_string_opt("keeponpause",  {"no", "bottombar", "both"}, "no")
     validate_string_opt("deadzone_hide", {"instant", "timeout"}, "instant")
+    -- enum options that used to fall back silently on invalid values now warn and reset
+    validate_string_opt("icon_theme",    {"fluent", "material"}, "fluent")
+    validate_string_opt("icon_style",    {"mixed", "filled", "outline"}, "mixed")
+    validate_string_opt("layout",        {"default", "compact", "mini", "seekbar"}, "default")
+    validate_string_opt("time_format",   {"dynamic", "fixed"}, "dynamic")
+    validate_string_opt("nibbles_style", {"gap", "triangle", "bar", "single-bar"}, "gap")
+    validate_string_opt("jump_mode",     {"relative", "exact"}, "relative")
 
     local hbc = user_opts.seek_handle_border_color
     if hbc == "disable" then
@@ -44,18 +54,50 @@ local function validate_user_opts()
     end
     user_opts.seek_handle_border_color = hbc
 
-    local colors = {
-        user_opts.osc_color, user_opts.seekbarfg_color, user_opts.seekbarbg_color, user_opts.title_color, user_opts.time_color,
-        user_opts.side_buttons_color, user_opts.middle_buttons_color, user_opts.playpause_color, user_opts.window_title_color,
-        user_opts.window_controls_color, user_opts.held_element_color, user_opts.thumbnail_box_color, user_opts.chapter_title_color,
-        user_opts.seekbar_cache_color, user_opts.hover_effect_color, user_opts.windowcontrols_close_hover, user_opts.windowcontrols_max_hover,
-        user_opts.windowcontrols_min_hover, user_opts.cache_info_color, user_opts.thumbnail_box_outline, user_opts.nibble_color,
-        user_opts.nibble_current_color, user_opts.seek_handle_color, user_opts.ab_loop_color,
+    -- color options are reset to their defaults on invalid values so a typo
+    -- can't leave garbage color tags in the generated ASS. The exception is
+    -- seek_handle_border_color, which intentionally allows "disable"/"" and is
+    -- normalized above.
+    local color_defaults = {
+        osc_color = "#000000",
+        window_title_color = "#FFFFFF",
+        window_controls_color = "#FFFFFF",
+        windowcontrols_close_hover = "#F45C5B",
+        windowcontrols_max_hover = "#F8BC3A",
+        windowcontrols_min_hover = "#43CB44",
+        title_color = "#FFFFFF",
+        cache_info_color = "#FFFFFF",
+        seekbar_cache_color = "#B1B1B1",
+        seekbarfg_color = "#FF8232",
+        seekbarbg_color = "#999999",
+        seek_handle_color = "#C96508",
+        time_color = "#FFFFFF",
+        chapter_title_color = "#FFFFFF",
+        side_buttons_color = "#FFFFFF",
+        middle_buttons_color = "#FFFFFF",
+        playpause_color = "#FFFFFF",
+        held_element_color = "#999999",
+        hover_effect_color = "#FF8232",
+        thumbnail_box_color = "#111111",
+        thumbnail_box_outline = "#404040",
+        nibble_color = "#FF8232",
+        nibble_current_color = "#FFFFFF",
+        ab_loop_color = "#2596be",
     }
 
-    for _, color in pairs(colors) do
-        if color:find("^#%x%x%x%x%x%x$") == nil then
-            msg.warn("'" .. color .. "' is not a valid color")
+    for key, default in pairs(color_defaults) do
+        local color = user_opts[key]
+        if type(color) ~= "string" or color:find("^#%x%x%x%x%x%x$") == nil then
+            msg.warn("'" .. tostring(color) .. "' is not a valid color for " .. key .. ". Resetting to '" .. default .. "'.")
+            user_opts[key] = default
+        end
+    end
+
+    -- surface unknown hover_effect tokens instead of silently ignoring them
+    for token in string.gmatch(user_opts.hover_effect, "([^,]+)") do
+        local t = token:match("^%s*(.-)%s*$")
+        if t ~= "size" and t ~= "color" and t ~= "glow" and t ~= "box" then
+            msg.warn("Ignoring unknown hover_effect '" .. t .. "'")
         end
     end
 

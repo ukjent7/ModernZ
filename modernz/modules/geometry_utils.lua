@@ -44,6 +44,10 @@ local function set_virt_mouse_area(x0, y0, x1, y1, name)
 end
 
 local function scale_value(x0, x1, y0, y1, val)
+    -- degenerate domain: the whole range collapses to a single point, so the
+    -- value is the coordinate at that point (avoids a division by zero that
+    -- would otherwise produce inf/NaN in downstream slider math)
+    if x1 == x0 then return y0 end
     local m = (y1 - y0) / (x1 - x0)
     local b = y0 - (m * x0)
     return (m * val) + b
