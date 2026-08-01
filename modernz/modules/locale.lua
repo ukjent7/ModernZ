@@ -85,28 +85,36 @@ end
 local locale_file_loaded = false
 local function load_locale_file()
     if user_opts.language == "default" or locale_file_loaded then return end
-    locale_file_loaded = true
 
     local external = get_locale_from_json("~~/script-opts/modernz-locale.json")
-    if external then
-        for lang, strings in pairs(external) do
-            if lang == "default" then
-                -- "default" is reserved
-                msg.warn("Locale JSON: 'default' is a reserved language key and cannot be overridden. Skipping.")
-            elseif type(strings) == "table" then
-                language[lang] = strings
+    if not external then
+        -- file missing or unparseable: leave locale_file_loaded false so a
+        -- later retry (e.g. after the user fixes the file) can succeed.
+        -- Previously the flag was set before loading, which permanently
+        -- disabled retries on a corrupt file (see CODE_REVIEW 7.2).
+        return
+    end
 
-                -- fill in any missing keys with the built-in defaults
-                for key, value in pairs(language["default"]) do
-                    if strings[key] == nil then
-                        strings[key] = value
-                    end
+    for lang, strings in pairs(external) do
+        if lang == "default" then
+            -- "default" is reserved
+            msg.warn("Locale JSON: 'default' is a reserved language key and cannot be overridden. Skipping.")
+        elseif type(strings) == "table" then
+            language[lang] = strings
+
+            -- fill in any missing keys with the built-in defaults
+            for key, value in pairs(language["default"]) do
+                if strings[key] == nil then
+                    strings[key] = value
                 end
-            else
-                msg.warn("Locale data for language '" .. lang .. "' is not in the correct format.")
             end
+        else
+            msg.warn("Locale data for language '" .. lang .. "' is not in the correct format.")
         end
     end
+
+    -- only mark the file as loaded after it parsed successfully
+    locale_file_loaded = true
 end
 
 local function set_osc_locale()

@@ -29,6 +29,7 @@ local function kill_animation(anitype_key, anistart_key, animation_key)
 end
 
 local function set_osd(osd, res_x, res_y, text, z)
+    if not osd then return end -- overlay creation failed (see core.lua)
     if osd.res_x == res_x and osd.res_y == res_y and osd.data == text then
         return
     end
@@ -126,6 +127,7 @@ end
 
 local function render_wipe(osd)
     msg.trace("render_wipe()")
+    if not osd then return end -- overlay creation failed (see core.lua)
     osd.data = "" -- allows set_osd to immediately update on enable
     osd:remove()
 end

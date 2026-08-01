@@ -20,6 +20,15 @@ local function get_ytdl_format()
     return fmt ~= "" and ("-f " .. fmt) or "-f bestvideo+bestaudio/best"
 end
 
+-- yt-dlp binary to invoke. Prefer the path mpv was configured with
+-- (--ytdl-path, e.g. a full path to a custom yt-dlp build), fall back to the
+-- default "yt-dlp" from PATH (see CODE_REVIEW 7.5).
+local function get_ytdl_binary()
+    local path = mp.get_property("ytdl-path")
+    if path and path ~= "" then return path end
+    return "yt-dlp"
+end
+
 local function exec(args, callback, timeout)
     for i = #args, 1, -1 do
         if args[i] == nil or args[i] == "" then table.remove(args, i) end
@@ -66,7 +75,7 @@ local function check_path_url()
             msg.info("Approximating file size...")
             state.file_size_normalized = "Approximating file size..."
             exec({
-                "yt-dlp",
+                get_ytdl_binary(),
                 state.is_image and "" or get_ytdl_format(),
                 "--no-download",
                 "-O", "%(filesize,filesize_approx)s",
@@ -108,6 +117,7 @@ end
 return {
     is_image = is_image,
     get_ytdl_format = get_ytdl_format,
+    get_ytdl_binary = get_ytdl_binary,
     exec = exec,
     check_path_url = check_path_url,
     download_done = download_done,

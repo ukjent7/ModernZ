@@ -22,7 +22,11 @@ local function recently_touched()
     return state.touchtime + 1 >= mp.get_time()
 end
 
--- return mouse position in virtual ASS coordinates (playresx/y)
+-- return mouse position in virtual ASS coordinates (playresx/y).
+-- Returns -1, -1 as a sentinel when the mouse is not in the window (and not
+-- recently touched); callers rely on the sentinel failing every hitbox
+-- comparison (mouse_hit_coords' mX >= bX1 check), so it must never be a
+-- valid coordinate (see CODE_REVIEW 7.9).
 local function get_virt_mouse_pos()
     if recently_touched() then
         local sx, sy = get_virt_scale_factor()

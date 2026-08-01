@@ -45,6 +45,54 @@ local get_elements = _elements.get_elements
 -- Reference stays valid: elements is rebuilt in place by prepare_elements().
 local elements = get_elements()
 
+-- Per-element cache of the static ASS prefix (style tags + alpha + optional
+-- color + static shapes). Every tick rebuilds these even though they only
+-- change while the fade animation is running; caching the final string and
+-- re-issuing it skips the merge/alpha math on all idle frames (see
+-- CODE_REVIEW 5.1). The key covers everything the output depends on, and the
+-- cache stays bounded because fade animation values repeat across fades of
+-- the same duration. A full dirty-flag system (re-rendering only elements
+-- whose state changed) remains future work; this covers the static portion.
+local DRAW_CACHE_MAX = 256
+local function build_draw_prefix(element, color, anim_override, alpha_override, inverse, tag_prefix, include_static)
+    local anim = anim_override or state.animation
+    local key = (anim and string.format("%.4f", anim) or "s")
+        .. "|" .. tostring(color) .. "|" .. tostring(alpha_override)
+        .. "|" .. tostring(inverse) .. "|" .. tostring(tag_prefix)
+        .. "|" .. (include_static and "1" or "0")
+    local cache = element.draw_cache
+    local cached = cache and cache[key]
+    if cached then
+        local ass = assdraw.ass_new()
+        ass:append(cached)
+        return ass
+    end
+
+    local ass = assdraw.ass_new()
+    ass:merge(element.style_ass)
+    ass_append_alpha(ass, element.layout.alpha, alpha_override or 0, inverse, anim_override)
+    if color then
+        ass:append("{" .. (tag_prefix or "\\blur0\\bord0") .. "\\1c&H" .. osc_color_convert(color) .. "&}")
+    end
+    if include_static then
+        ass:merge(element.static_ass)
+    end
+
+    if not cache then
+        cache = {}
+        element.draw_cache = cache
+        element.draw_cache_count = 0
+    end
+    if element.draw_cache_count >= DRAW_CACHE_MAX then
+        -- bound memory when many distinct animation values are seen
+        for k in pairs(cache) do cache[k] = nil end
+        element.draw_cache_count = 0
+    end
+    cache[key] = ass.text
+    element.draw_cache_count = element.draw_cache_count + 1
+    return ass
+end
+
 local function get_chapter(possec)
     local cl = state.chapter_list  -- sorted, get latest before possec, if any
 
@@ -98,12 +146,7 @@ end
 -- this for the seekbar-ranges and nibble backgrounds too.
 local function begin_draw_layer(element, elem_ass, color, anim_override, alpha_override, inverse, tag_prefix)
     elem_ass:draw_stop()
-    elem_ass:merge(element.style_ass)
-    ass_append_alpha(elem_ass, element.layout.alpha, alpha_override or 0, inverse, anim_override)
-    if color then
-        elem_ass:append("{" .. (tag_prefix or "\\blur0\\bord0") .. "\\1c&H" .. osc_color_convert(color) .. "&}")
-    end
-    elem_ass:merge(element.static_ass)
+    elem_ass:merge(build_draw_prefix(element, color, anim_override, alpha_override, inverse, tag_prefix, true))
 end
 
 -- Draws a handle on the seekbar using precomputed position and radius
@@ -387,9 +430,7 @@ local function render_elements(master_ass, osc_vis, wc_vis)
             anim_override = state.wc_animation or 0
         end
 
-        local style_ass = assdraw.ass_new()
-        style_ass:merge(element.style_ass)
-        ass_append_alpha(style_ass, element.layout.alpha, 0, nil, anim_override)
+        local style_ass = build_draw_prefix(element, nil, anim_override, nil, nil, nil, false)
 
         if element.eventresponder and (state.active_element == n) then
             -- run render event functions
@@ -681,10 +722,8 @@ end
 local function render_persistent_progress(master_ass)
     local element = state.persistent_seekbar_element
     if not element or not element.layout then return end
-    local style_ass = assdraw.ass_new()
-    style_ass:merge(element.style_ass)
     if state.animation or not state.osc_visible then
-        ass_append_alpha(style_ass, element.layout.alpha, 0, true)
+        local style_ass = build_draw_prefix(element, nil, nil, 0, true, nil, false)
 
         local elem_ass = assdraw.ass_new()
         elem_ass:merge(style_ass)

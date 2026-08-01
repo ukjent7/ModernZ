@@ -5,6 +5,21 @@ local icon_font = "modernz-icons"
 
 local platform = mp.get_property("platform")
 local window_control_box_width = 150
+
+-- Layout geometry constants (ASS canvas units). Named so layout code reads as
+-- intent instead of magic numbers (see CODE_REVIEW 3.1).
+local SIDE_BUTTON_MARGIN = 37      -- distance of the outermost side buttons from the screen edge
+local SIDE_BUTTON_STEP = 45        -- horizontal spacing between side buttons (default/compact/modern-image)
+local SIDE_BUTTON_STEP_MINI = 35   -- horizontal spacing between side buttons (mini layout)
+local BUTTON_SIZE = 24             -- default side button size (w and h)
+local MID_BUTTON_W = 30            -- width of the center transport buttons
+local MID_BUTTON_H = 24            -- height of the center transport buttons
+local PLAY_PAUSE_W = 45            -- play/pause button width
+local PLAY_PAUSE_H = 28            -- play/pause button height
+local CENTER_BUTTON_GAP = 60       -- gap between play/pause and the adjacent center buttons
+local SLIDER_HITBOX_PAD = 14       -- extra vertical hitbox padding for sliders
+local TOOLTIP_PAD_H = 5            -- tooltip horizontal padding
+local TOOLTIP_PAD_V = 3            -- tooltip vertical padding
 local is_december = os.date("*t").month == 12
 local UNICODE_MINUS = string.char(0xe2, 0x88, 0x92)  -- UTF-8 for U+2212 MINUS SIGN
 
@@ -71,6 +86,18 @@ return {
     icon_font = icon_font,
     platform = platform,
     window_control_box_width = window_control_box_width,
+    SIDE_BUTTON_MARGIN = SIDE_BUTTON_MARGIN,
+    SIDE_BUTTON_STEP = SIDE_BUTTON_STEP,
+    SIDE_BUTTON_STEP_MINI = SIDE_BUTTON_STEP_MINI,
+    BUTTON_SIZE = BUTTON_SIZE,
+    MID_BUTTON_W = MID_BUTTON_W,
+    MID_BUTTON_H = MID_BUTTON_H,
+    PLAY_PAUSE_W = PLAY_PAUSE_W,
+    PLAY_PAUSE_H = PLAY_PAUSE_H,
+    CENTER_BUTTON_GAP = CENTER_BUTTON_GAP,
+    SLIDER_HITBOX_PAD = SLIDER_HITBOX_PAD,
+    TOOLTIP_PAD_H = TOOLTIP_PAD_H,
+    TOOLTIP_PAD_V = TOOLTIP_PAD_V,
     is_december = is_december,
     UNICODE_MINUS = UNICODE_MINUS,
     logo_lines = logo_lines,

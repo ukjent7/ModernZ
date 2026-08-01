@@ -54,6 +54,49 @@ local function validate_user_opts()
         end
     end
 
+    -- numeric options: clamp out-of-range values (with a warning) so they
+    -- can't produce degenerate rendering (negative fade duration, deadzone
+    -- beyond [0,1], non-positive scales/font sizes, etc.) — see CODE_REVIEW 6.1.
+    local number_opts = {
+        {key = "fadeduration",               min = 0},
+        {key = "hidetimeout",                min = 0},
+        {key = "deadzonesize",               min = 0, max = 1},
+        {key = "scalewindowed",              min = 0.01},
+        {key = "scalefullscreen",            min = 0.01},
+        {key = "tick_delay",                 min = 1 / 1000},
+        {key = "osc_height",                 min = 1},
+        {key = "title_font_size",            min = 1},
+        {key = "chapter_title_font_size",    min = 1},
+        {key = "cache_info_font_size",       min = 1},
+        {key = "time_font_size",             min = 1},
+        {key = "tooltip_font_size",          min = 1},
+        {key = "speed_font_size",            min = 1},
+        {key = "window_title_font_size",     min = 1},
+        {key = "playpause_size",             min = 1},
+        {key = "midbuttons_size",            min = 1},
+        {key = "sidebuttons_size",           min = 1},
+        {key = "button_hover_size",          min = 1},
+        {key = "button_held_size",           min = 1},
+        {key = "slider_hover_size",          min = 1},
+        {key = "button_glow_amount",         min = 0},
+        {key = "seekrangealpha",             min = 0, max = 255},
+        {key = "thumbnail_box_padding",      min = 0},
+        {key = "thumbnail_box_radius",       min = 0},
+        {key = "thumbnail_box_outline_size", min = 0},
+        {key = "persistent_progress_height", min = 1},
+    }
+    for _, opt in ipairs(number_opts) do
+        local v = tonumber(user_opts[opt.key])
+        if v == nil then
+            msg.warn(opt.key .. " value '" .. tostring(user_opts[opt.key]) .. "' is not a number. Setting it to " .. tostring(opt.min or 0) .. ".")
+            user_opts[opt.key] = opt.min or 0
+        elseif (opt.min and v < opt.min) or (opt.max and v > opt.max) then
+            v = math.max(opt.min or -math.huge, math.min(opt.max or math.huge, v))
+            msg.warn(opt.key .. " must be within [" .. tostring(opt.min or "-inf") .. ", " .. tostring(opt.max or "inf") .. "]. Clamping to " .. tostring(v) .. ".")
+            user_opts[opt.key] = v
+        end
+    end
+
     local hbc = user_opts.seek_handle_border_color
     if hbc == "disable" then
         hbc = ""
@@ -75,20 +118,32 @@ local function validate_user_opts()
         end
     end
 
-    -- surface unknown hover_effect tokens instead of silently ignoring them
+    -- hover_effect is a comma-separated effect list. Unknown tokens are
+    -- dropped (not just warned about) so the effective set always matches the
+    -- configuration — consistent with the enum options, which reset on
+    -- invalid values (see CODE_REVIEW 6.2).
+    local valid_effects = { size = true, color = true, glow = true, box = true }
+    local effects, n = {}, 0
     for token in string.gmatch(user_opts.hover_effect, "([^,]+)") do
         local t = token:match("^%s*(.-)%s*$")
-        if t ~= "size" and t ~= "color" and t ~= "glow" and t ~= "box" then
+        if valid_effects[t] then
+            n = n + 1
+            effects[n] = t
+        else
             msg.warn("Ignoring unknown hover_effect '" .. t .. "'")
         end
     end
+    user_opts.hover_effect = table.concat(effects, ",")
 
     state.visibility_modes = {}
-    for str in string.gmatch(user_opts.visibility_modes, "([^_]+)") do
-        if str ~= "auto" and str ~= "always" and str ~= "never" then
-            msg.warn("Ignoring unknown visibility mode '" .. str .."' in list")
+    -- comma-separated list (previously underscore-separated; both separators
+    -- are still accepted so existing configs keep working, see CODE_REVIEW 6.3)
+    for str in string.gmatch(user_opts.visibility_modes, "([^,_]+)") do
+        local t = str:match("^%s*(.-)%s*$")
+        if t ~= "auto" and t ~= "always" and t ~= "never" then
+            msg.warn("Ignoring unknown visibility mode '" .. t .."' in list")
         else
-            table.insert(state.visibility_modes, str)
+            table.insert(state.visibility_modes, t)
         end
     end
 

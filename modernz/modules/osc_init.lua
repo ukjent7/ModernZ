@@ -40,6 +40,7 @@ local get_elements = _elements.get_elements
 local clear_elements = _elements.clear_elements
 local _media = require("modules.media")
 local get_ytdl_format = _media.get_ytdl_format
+local get_ytdl_binary = _media.get_ytdl_binary
 local exec = _media.exec
 local download_done = _media.download_done
 local _layouts = require("modules.layouts")
@@ -80,7 +81,11 @@ end
 
 -- Truncate a UTF-8 string to fit max_w (measured in style), appending an
 -- ellipsis. Uses binary search over character boundaries so it never slices a
--- multi-byte character in half.
+-- multi-byte character in half. Note: only called during osc_init (reinit),
+-- not on the render hot path, and estimate_text_width caches per measured
+-- string, so the ~log2(n) measurements are cheap in practice. A precomputed
+-- character-width array would trade that for n measurements, which is worse
+-- for long titles — the binary search stays (see CODE_REVIEW 5.3).
 local function truncate_title(title, max_w, style)
     if not max_w or max_w <= 0 or estimate_text_width(title, style) <= max_w then return title end
     local ell_w = estimate_text_width("…", style)
@@ -105,10 +110,28 @@ local function truncate_title(title, max_w, style)
     return title:sub(1, fit > 0 and char_ends[fit] or 0) .. "…"
 end
 
+-- Track tooltip labels are built from mpv properties ("current-tracks/...",
+-- aid/sid); recomputing them on every hovered frame costs 2-3 native property
+-- reads. Cache per (label, track type, count) and invalidate when the
+-- underlying tracks change (see CODE_REVIEW 5.2): aid/sid switches clear the
+-- cache directly, and whole track-list changes go through request_init ->
+-- osc_init(), which clears it too.
+local track_tooltip_cache = {}
+local function clear_track_tooltip_cache()
+    for k in pairs(track_tooltip_cache) do track_tooltip_cache[k] = nil end
+end
+mp.observe_property("aid", "native", clear_track_tooltip_cache)
+mp.observe_property("sid", "native", clear_track_tooltip_cache)
+
 -- Track tooltip label, e.g. "Audio [1/2] [English]".
 local function track_tooltip(label, track_type, id_prop, count)
+    local key = label .. "|" .. track_type .. "|" .. tostring(count)
+    local cached = track_tooltip_cache[key]
+    if cached then return cached end
     local prop = mp.get_property("current-tracks/" .. track_type .. "/title") or mp.get_property("current-tracks/" .. track_type .. "/lang") or locale.unknown
-    return label .. " [" .. mp.get_property_number(id_prop, "-") .. "/" .. count .. "] [" .. prop .. "]"
+    local result = label .. " [" .. mp.get_property_number(id_prop, "-") .. "/" .. count .. "] [" .. prop .. "]"
+    track_tooltip_cache[key] = result
+    return result
 end
 
 -- Step the video zoom by delta, clamped to the configured range.
@@ -201,59 +224,15 @@ local function bind_buttons(element_name, use_down)
     for _, b in ipairs({"wheel_up", "wheel_down"}) do bind(b, b .. "_press") end
 end
 
+--
+-- Element creation factories. osc_init() was a ~580-line function; the
+-- element groups are now built by per-concern factories so each element's
+-- creation logic stays easy to locate (see CODE_REVIEW 7.7). Each factory
+-- owns its local `ne`; element creation order is irrelevant (layouts run
+-- after all factories).
+--
 
-local function osc_init()
-    msg.debug("osc_init")
-
-    -- set canvas resolution according to display aspect and scaling setting
-    local baseResY = 720
-    local display_h = state.osd_dimensions.h
-    local display_aspect = state.osd_dimensions.aspect
-    local scale
-
-    if state.fullscreen then
-        scale = user_opts.scalefullscreen
-    else
-        scale = user_opts.scalewindowed
-    end
-
-    local scale_with_video
-    if user_opts.vidscale == "auto" then
-        scale_with_video = state.osd_scale_by_window
-    else
-        scale_with_video = user_opts.vidscale == "yes"
-    end
-
-    if scale_with_video then
-        osc_param.unscaled_y = baseResY
-    else
-        osc_param.unscaled_y = display_h
-    end
-    osc_param.playresy = osc_param.unscaled_y / scale
-    if display_aspect > 0 then
-        osc_param.display_aspect = display_aspect
-    end
-    osc_param.playresx = osc_param.playresy * osc_param.display_aspect
-
-    -- stop seeking with the slider to prevent skipping files
-    state.active_element = nil
-    state.playing_and_seeking = false
-
-    -- reset margins and text width
-    clear_text_width_cache()
-    reset_video_margins()
-
-    clear_elements()
-
-    -- some often needed stuff
-    local pl_count = state.playlist_count
-    local have_pl = pl_count > 1
-    local pl_pos = state.playlist_pos_1
-    local have_ch = #state.chapter_list > 0
-    local loop = mp.get_property("loop-playlist", "no")
-
-    local ne
-
+local function create_window_control_buttons()
     -- Window controls
     -- Close: 🗙
     make_window_button("close", icons.window.close, user_opts.windowcontrols_close_hover, function() mp.commandv("quit") end)
@@ -266,15 +245,17 @@ local function osc_init()
         function() mp.commandv("cycle", (state.fullscreen and "fullscreen" or "window-maximized")) end)
 
     -- Window Title
-    ne = new_element("windowtitle", "button")
-    ne.content = function ()
+    local ne = new_element("windowtitle", "button")
+    ne.content = function()
         local t = make_escaped_title(mp.get_property("title"))
         return user_opts.truncate_title and truncate_title(t, state.windowtitle_max_w, osc_styles.window_title) or t
     end
+end
 
+local function create_title_elements()
     -- OSC title
-    ne = new_element("title", "button")
-    ne.content = function ()
+    local ne = new_element("title", "button")
+    ne.content = function()
         local t = make_escaped_title(user_opts.title)
         return user_opts.truncate_title and truncate_title(t, state.title_max_w, osc_styles.title) or t
     end
@@ -293,10 +274,22 @@ local function osc_init()
         return user_opts.truncate_title and truncate_title(t, state.chapter_title_max_w, osc_styles.chapter_title) or t
     end
     bind_buttons("chapter_title")
+end
+
+local function create_playback_controls()
+    local pl_count = state.playlist_count
+    local have_pl = pl_count > 1
+    local pl_pos = state.playlist_pos_1
+    local have_ch = #state.chapter_list > 0
+    local loop = mp.get_property("loop-playlist", "no")
+    local jump_amount = user_opts.jump_amount
+    local jump_more_amount = user_opts.jump_more_amount
+    local jump_mode = user_opts.jump_mode
+    local jump_icon = user_opts.jump_icon_number and icons.jump[jump_amount] or icons.jump.default
 
     -- playlist buttons
     -- prev
-    ne = new_element("playlist_prev", "button")
+    local ne = new_element("playlist_prev", "button")
     ne.content = icons.previous
     ne.enabled = (pl_pos > 1) or (loop ~= "no") or contains(user_opts.buttons_always_active, "playlist_prev")
     bind_buttons("playlist_prev")
@@ -310,9 +303,9 @@ local function osc_init()
     --play control buttons
     --play_pause
     ne = new_element("play_pause", "button")
-    ne.content = function () return state.eof_reached and icons.replay or (state.pause and not state.playing_and_seeking and icons.play) or icons.pause end
+    ne.content = function() return state.eof_reached and icons.replay or (state.pause and not state.playing_and_seeking and icons.play) or icons.pause end
     bind_buttons("play_pause")
-    ne.eventresponder["mbtn_left_up"] = function ()
+    ne.eventresponder["mbtn_left_up"] = function()
         if state.eof_reached then
             mp.commandv("seek", 0, "absolute-percent")
             mp.commandv("set", "pause", "no")
@@ -321,26 +314,21 @@ local function osc_init()
         end
     end
 
-    local jump_amount = user_opts.jump_amount
-    local jump_more_amount = user_opts.jump_more_amount
-    local jump_mode = user_opts.jump_mode
-    local jump_icon = user_opts.jump_icon_number and icons.jump[jump_amount] or icons.jump.default
-
     --jump_backward
     ne = new_element("jump_backward", "button")
     ne.softrepeat = user_opts.jump_softrepeat
     ne.content = jump_icon[1]
-    ne.eventresponder["mbtn_left_down"] = function () mp.commandv("seek", -jump_amount, jump_mode) end
-    ne.eventresponder["mbtn_right_down"] = function () mp.commandv("seek", -jump_more_amount, jump_mode) end
-    ne.eventresponder["shift+mbtn_left_down"] = function () mp.commandv("frame-back-step") end
+    ne.eventresponder["mbtn_left_down"] = function() mp.commandv("seek", -jump_amount, jump_mode) end
+    ne.eventresponder["mbtn_right_down"] = function() mp.commandv("seek", -jump_more_amount, jump_mode) end
+    ne.eventresponder["shift+mbtn_left_down"] = function() mp.commandv("frame-back-step") end
 
     --jump_forward
     ne = new_element("jump_forward", "button")
     ne.softrepeat = user_opts.jump_softrepeat
     ne.content = jump_icon[2]
-    ne.eventresponder["mbtn_left_down"] = function () mp.commandv("seek", jump_amount, jump_mode) end
-    ne.eventresponder["mbtn_right_down"] = function () mp.commandv("seek", jump_more_amount, jump_mode) end
-    ne.eventresponder["shift+mbtn_left_down"] = function () mp.commandv("frame-step") end
+    ne.eventresponder["mbtn_left_down"] = function() mp.commandv("seek", jump_amount, jump_mode) end
+    ne.eventresponder["mbtn_right_down"] = function() mp.commandv("seek", jump_more_amount, jump_mode) end
+    ne.eventresponder["shift+mbtn_left_down"] = function() mp.commandv("frame-step") end
 
     --chapter_prev
     ne = new_element("chapter_prev", "button")
@@ -353,9 +341,15 @@ local function osc_init()
     ne.content = icons.forward
     ne.enabled = have_ch -- disables button when no chapters available.
     bind_buttons("chapter_next", true)
+end
+
+local function create_track_buttons()
+    local pl_count = state.playlist_count
+    local have_pl = pl_count > 1
+    local pl_pos = state.playlist_pos_1
 
     --playlist
-    ne = new_element("playlist", "button")
+    local ne = new_element("playlist", "button")
     ne.enabled = have_pl or not user_opts.hide_empty_playlist_button
     ne.off = not have_pl and user_opts.gray_empty_playlist_button
     ne.content = icons.playlist
@@ -368,7 +362,7 @@ local function osc_init()
     ne.enabled = state.audio_track_count > 0
     ne.off = state.audio_track_count == 0 or not mp.get_property_native("aid")
     ne.content = icons.audio
-    ne.tooltipF = function () return track_tooltip(locale.audio, "audio", "aid", state.audio_track_count) end
+    ne.tooltipF = function() return track_tooltip(locale.audio, "audio", "aid", state.audio_track_count) end
     ne.nothingavailable = locale.no_audio
     bind_buttons("audio_track")
 
@@ -377,19 +371,21 @@ local function osc_init()
     ne.enabled = state.sub_track_count > 0
     ne.off = state.sub_track_count == 0 or not mp.get_property_native("sid")
     ne.content = icons.subtitle
-    ne.tooltipF = function () return track_tooltip(locale.subtitle, "sub", "sid", state.sub_track_count) end
+    ne.tooltipF = function() return track_tooltip(locale.subtitle, "sub", "sid", state.sub_track_count) end
     ne.nothingavailable = locale.no_subs
     bind_buttons("sub_track")
+end
 
+local function create_volume_controls()
     -- vol_ctrl
-    ne = new_element("vol_ctrl", "button")
+    local ne = new_element("vol_ctrl", "button")
     ne.enabled = state.audio_track_count > 0
     ne.off = state.audio_track_count == 0
-    ne.content = function ()
+    ne.content = function()
         local volume = state.volume
         return state.mute and icons.volume_mute or (volume >= 75 and icons.volume_high) or (volume >= 25 and icons.volume_low) or icons.volume_quiet
     end
-    ne.tooltipF = function ()
+    ne.tooltipF = function()
         local volume = state.volume
         -- show only one decimal, if decimals exist
         local volume_str = (volume % 1 == 0) and string.format("%.0f", volume) or string.format("%.1f", volume)
@@ -405,7 +401,7 @@ local function osc_init()
     -- mutate the default slider table so markerF/seekRangesF defaults survive
     ne.slider.min.value = 0
     ne.slider.max.value = volume_max
-    ne.slider.posF = function ()
+    ne.slider.posF = function()
         if user_opts.volume_control_type ~= "logarithmic" then return state.volume end
         return state.volume and math.sqrt(state.volume * 100) or 0
     end
@@ -414,7 +410,7 @@ local function osc_init()
     end, function(v)
         mp.commandv("set", "volume", v)
     end, function(e) e.state.mbtnleft = false end)
-    ne.eventresponder["mbtn_left_down"] = function (element)
+    ne.eventresponder["mbtn_left_down"] = function(element)
         element.state.mbtnleft = true
         local pos = get_slider_value(element)
         if user_opts.volumebar_unmute_on_click then
@@ -422,48 +418,52 @@ local function osc_init()
         end
         mp.commandv("set", "volume", set_volume(pos))
     end
-    ne.eventresponder["mbtn_left_up"] = function (element)
+    ne.eventresponder["mbtn_left_up"] = function(element)
         element.state.mbtnleft = false
         element.state.handle_drag = false
     end
     bind_buttons("volumebar")
+end
 
+local function create_zoom_controls()
     -- zoom out icon
-    ne = new_element("zoom_out_icon", "button")
+    local ne = new_element("zoom_out_icon", "button")
     ne.content = icons.zoom_out
     ne.tooltipF = locale.zoom_out
-    ne.eventresponder["mbtn_left_up"] = function () zoom_step(-0.05) end
-    ne.eventresponder["mbtn_right_up"] = function () mp.commandv("osd-msg", "set", "video-zoom", 0) end
-    ne.eventresponder["wheel_up_press"] = function () zoom_step(0.05) end
-    ne.eventresponder["wheel_down_press"] = function () zoom_step(-0.05) end
+    ne.eventresponder["mbtn_left_up"] = function() zoom_step(-0.05) end
+    ne.eventresponder["mbtn_right_up"] = function() mp.commandv("osd-msg", "set", "video-zoom", 0) end
+    ne.eventresponder["wheel_up_press"] = function() zoom_step(0.05) end
+    ne.eventresponder["wheel_down_press"] = function() zoom_step(-0.05) end
 
     -- zoom slider
     ne = new_element("zoom_control", "slider")
     ne.slider.min.value = user_opts.zoom_out_min
     ne.slider.max.value = user_opts.zoom_in_max
-    ne.slider.posF = function () return mp.get_property_number("video-zoom") end
-    ne.slider.tooltipF = function (pos) return string.format("%.3f", pos):gsub("%.?0*$", "") end
+    ne.slider.posF = function() return mp.get_property_number("video-zoom") end
+    ne.slider.tooltipF = function(pos) return string.format("%.3f", pos):gsub("%.?0*$", "") end
     make_slider_drag(ne, function(_, pos)
         return pos
     end, function(v)
         mp.commandv("osd-msg", "set", "video-zoom", v)
     end)
-    ne.eventresponder["mbtn_left_down"] = function (element) mp.commandv("osd-msg", "set", "video-zoom", get_slider_value(element)) end
-    ne.eventresponder["mbtn_right_up"] = function () mp.commandv("osd-msg", "set", "video-zoom", 0) end
-    ne.eventresponder["wheel_up_press"] = function () zoom_step(0.05) end
-    ne.eventresponder["wheel_down_press"]= function () zoom_step(-0.05) end
+    ne.eventresponder["mbtn_left_down"] = function(element) mp.commandv("osd-msg", "set", "video-zoom", get_slider_value(element)) end
+    ne.eventresponder["mbtn_right_up"] = function() mp.commandv("osd-msg", "set", "video-zoom", 0) end
+    ne.eventresponder["wheel_up_press"] = function() zoom_step(0.05) end
+    ne.eventresponder["wheel_down_press"] = function() zoom_step(-0.05) end
 
     -- zoom in icon
     ne = new_element("zoom_in_icon", "button")
     ne.content = icons.zoom_in
     ne.tooltipF = locale.zoom_in
-    ne.eventresponder["mbtn_left_up"] = function () zoom_step(0.05) end
-    ne.eventresponder["mbtn_right_up"] = function () mp.commandv("osd-msg", "set", "video-zoom", 0) end
-    ne.eventresponder["wheel_up_press"] = function () zoom_step(0.05) end
-    ne.eventresponder["wheel_down_press"]= function () zoom_step(-0.05) end
+    ne.eventresponder["mbtn_left_up"] = function() zoom_step(0.05) end
+    ne.eventresponder["mbtn_right_up"] = function() mp.commandv("osd-msg", "set", "video-zoom", 0) end
+    ne.eventresponder["wheel_up_press"] = function() zoom_step(0.05) end
+    ne.eventresponder["wheel_down_press"] = function() zoom_step(-0.05) end
+end
 
+local function create_side_buttons()
     --fullscreen
-    ne = new_element("fullscreen", "button")
+    local ne = new_element("fullscreen", "button")
     ne.content = function() return state.fullscreen and icons.fullscreen_exit or icons.fullscreen end
     ne.tooltipF = function() return state.fullscreen and locale.fullscreen_exit or locale.fullscreen end
     bind_buttons("fullscreen")
@@ -476,8 +476,8 @@ local function osc_init()
 
     --ontop
     ne = new_element("ontop", "button")
-    ne.content = function () return not state.ontop and icons.ontop_on or icons.ontop_off end
-    ne.tooltipF = function ()
+    ne.content = function() return not state.ontop and icons.ontop_on or icons.ontop_off end
+    ne.tooltipF = function()
         if user_opts.ontop_in_topbar and window_controls_enabled() and state.ontop then return nil end
         return state.ontop and locale.ontop_disable or locale.ontop
     end
@@ -513,8 +513,62 @@ local function osc_init()
     -- override left click to toggle speed menu
     ne.eventresponder["mbtn_left_up"] = function() toggle_speed_menu() end
 
+    --download
+    ne = new_element("download", "button")
+    ne.content = function() return state.downloading and icons.downloading or icons.download end
+    ne.tooltipF = function() return state.downloading and locale.downloading .. "..." or locale.download .. " (" .. state.file_size_normalized .. ")" end
+    ne.eventresponder["mbtn_left_up"] = function()
+        local localpath = mp.command_native({"expand-path", user_opts.download_path})
+
+        if state.downloaded_once then
+            mp.commandv("show-text", locale.downloaded, "-1", "1")
+        elseif state.downloading then
+            mp.commandv("show-text", locale.download_in_progress, "-1", "1")
+        else
+            mp.commandv("show-text", locale.downloading .. "...", "-1", "1")
+            state.downloading = true
+            local command = {
+                get_ytdl_binary(),
+                state.is_image and "" or get_ytdl_format(),
+                "--add-metadata",
+                "--embed-subs",
+                "-o", "%(title)s.%(ext)s",
+                "-P", localpath,
+                state.url_path
+            }
+
+            exec(command, download_done)
+        end
+    end
+
+    -- cache info
+    ne = new_element("cache_info", "button")
+    ne.content = function()
+        if not cache_enabled() then return "" end
+        local dcs = state.demuxer_cache_state
+        local dmx_cache = state.dmx_cache
+        local cache_state = dcs and dcs["cache-duration"]
+        local thresh = math.min(dmx_cache * 0.05, 5)
+        if cache_state and math.abs(cache_state - dmx_cache) >= thresh then
+            dmx_cache = cache_state
+            state.dmx_cache = cache_state
+        end
+        local min = math.floor(dmx_cache / 60)
+        local sec = math.floor(dmx_cache % 60)
+        local cache_time = (min > 0) and string.format("%sm%02ds", min, sec) or string.format("%3ds", sec)
+        local cache_info = (mp.get_property_bool("paused-for-cache") == true) and (locale.buffering .. ": " .. (mp.get_property("cache-buffering-state") or 0) .. "%") or cache_time
+        if not user_opts.cache_info_speed then return cache_info end
+        local dmx_speed = (dcs and dcs["raw-input-rate"]) or 0
+        local number, unit = utils.format_bytes_humanized(dmx_speed):match("([%d%.]+)%s*(%S+)")
+        return cache_info .. "\\N" .. string.format("%8s %4s/s", number or 0, unit or "B")
+    end
+    ne.tooltipF = function() return cache_enabled() and locale.cache or nil end
+    ne.eventresponder["mbtn_left_up"] = function() mp.command("script-binding stats/display-page-3") end
+end
+
+local function create_speed_menu_elements()
     --speed menu backdrop (click outside to close)
-    ne = new_element("speed_menu_backdrop", "button")
+    local ne = new_element("speed_menu_backdrop", "button")
     ne.content = ""
     ne.visible = false
     ne.eventresponder["mbtn_left_up"] = function() close_speed_menu() end
@@ -588,64 +642,14 @@ local function osc_init()
             mp.set_property_number("speed", spd)
         end
     end
+end
 
-    --download
-    ne = new_element("download", "button")
-    ne.content = function () return state.downloading and icons.downloading or icons.download end
-    ne.tooltipF = function () return state.downloading and locale.downloading .. "..." or locale.download .. " (" .. state.file_size_normalized .. ")" end
-    ne.eventresponder["mbtn_left_up"] = function ()
-        local localpath = mp.command_native({"expand-path", user_opts.download_path})
-
-        if state.downloaded_once then
-            mp.commandv("show-text", locale.downloaded, "-1", "1")
-        elseif state.downloading then
-            mp.commandv("show-text", locale.download_in_progress, "-1", "1")
-        else
-            mp.commandv("show-text", locale.downloading .. "...", "-1", "1")
-            state.downloading = true
-            local command = {
-                "yt-dlp",
-                state.is_image and "" or get_ytdl_format(),
-                "--add-metadata",
-                "--embed-subs",
-                "-o", "%(title)s.%(ext)s",
-                "-P", localpath,
-                state.url_path
-            }
-
-            exec(command, download_done)
-        end
-    end
-
-    -- cache info
-    ne = new_element("cache_info", "button")
-    ne.content = function ()
-        if not cache_enabled() then return "" end
-        local dcs = state.demuxer_cache_state
-        local dmx_cache = state.dmx_cache
-        local cache_state = dcs and dcs["cache-duration"]
-        local thresh = math.min(dmx_cache * 0.05, 5)
-        if cache_state and math.abs(cache_state - dmx_cache) >= thresh then
-            dmx_cache = cache_state
-            state.dmx_cache = cache_state
-        end
-        local min = math.floor(dmx_cache / 60)
-        local sec = math.floor(dmx_cache % 60)
-        local cache_time = (min > 0) and string.format("%sm%02ds", min, sec) or string.format("%3ds", sec)
-        local cache_info = (mp.get_property_bool("paused-for-cache") == true) and (locale.buffering .. ": " .. (mp.get_property("cache-buffering-state") or 0) .. "%") or cache_time
-        if not user_opts.cache_info_speed then return cache_info end
-        local dmx_speed = (dcs and dcs["raw-input-rate"]) or 0
-        local number, unit = utils.format_bytes_humanized(dmx_speed):match("([%d%.]+)%s*(%S+)")
-        return cache_info .. "\\N" .. string.format("%8s %4s/s", number or 0, unit or "B")
-    end
-    ne.tooltipF = function() return cache_enabled() and locale.cache or nil end
-    ne.eventresponder["mbtn_left_up"] = function() mp.command("script-binding stats/display-page-3") end
-
+local function create_seekbar_elements()
     --seekbar
-    ne = new_element("seekbar", "slider")
+    local ne = new_element("seekbar", "slider")
     ne.enabled = seekbar_enabled()
     ne.thumbnailable = true
-    ne.slider.markerF = function ()
+    ne.slider.markerF = function()
         if state.duration then
             local chapters = state.chapter_list
             local markers = {}
@@ -658,12 +662,12 @@ local function osc_init()
         end
     end
     ne.slider.posF = seekbar_posF
-    ne.slider.tooltipF = function (pos)
+    ne.slider.tooltipF = function(pos)
         if state.duration ~= nil and pos ~= nil then return format_time(state.duration * (pos / 100)) end
         return ""
     end
     ne.slider.seekRangesF = build_cache_seek_ranges
-    ne.eventresponder["mouse_move"] = function (element)
+    ne.eventresponder["mouse_move"] = function(element)
         if not element.state.mbtnleft then return end -- allow drag for mbtnleft only!
         state.playing_and_seeking = true
         if not mp.get_property_bool("pause") and user_opts.mouse_seek_pause then
@@ -679,22 +683,22 @@ local function osc_init()
             element.state.lastseek = seekto
         end
     end
-    ne.eventresponder["mbtn_left_down"] = function (element)
+    ne.eventresponder["mbtn_left_down"] = function(element)
         element.state.mbtnleft = true
         element.state.was_paused = mp.get_property_bool("pause")
         state.playing_and_seeking = false
         mp.commandv("seek", get_slider_value(element), "absolute-percent+exact")
     end
-    ne.eventresponder["shift+mbtn_left_down"] = function (element)
+    ne.eventresponder["shift+mbtn_left_down"] = function(element)
         element.state.mbtnleft = true
         element.state.was_paused = mp.get_property_bool("pause")
         state.playing_and_seeking = false
         mp.commandv("seek", get_slider_value(element), "absolute-percent")
     end
-    ne.eventresponder["mbtn_left_up"] = function (element)
+    ne.eventresponder["mbtn_left_up"] = function(element)
         end_seek_drag(element)
     end
-    ne.eventresponder["mbtn_right_down"] = function (element)
+    ne.eventresponder["mbtn_right_down"] = function(element)
         local chapter
         local pos = get_slider_value(element)
         local diff = math.huge
@@ -710,7 +714,7 @@ local function osc_init()
             mp.set_property("chapter", chapter - 1)
         end
     end
-    ne.eventresponder["reset"] = function (element)
+    ne.eventresponder["reset"] = function(element)
         element.state.lastseek = nil
         if element.state.mbtnleft then
             end_seek_drag(element)
@@ -756,6 +760,64 @@ local function osc_init()
         state.tc_ms = not state.tc_ms
         request_init()
     end
+end
+
+local function osc_init()
+    msg.debug("osc_init")
+
+    -- set canvas resolution according to display aspect and scaling setting
+    local baseResY = 720
+    local display_h = state.osd_dimensions.h
+    local display_aspect = state.osd_dimensions.aspect
+    local scale
+
+    if state.fullscreen then
+        scale = user_opts.scalefullscreen
+    else
+        scale = user_opts.scalewindowed
+    end
+
+    local scale_with_video
+    if user_opts.vidscale == "auto" then
+        scale_with_video = state.osd_scale_by_window
+    else
+        scale_with_video = user_opts.vidscale == "yes"
+    end
+
+    if scale_with_video then
+        osc_param.unscaled_y = baseResY
+    else
+        osc_param.unscaled_y = display_h
+    end
+    osc_param.playresy = osc_param.unscaled_y / scale
+    if display_aspect > 0 then
+        osc_param.display_aspect = display_aspect
+    end
+    osc_param.playresx = osc_param.playresy * osc_param.display_aspect
+
+    -- stop seeking with the slider to prevent skipping files
+    state.active_element = nil
+    state.playing_and_seeking = false
+
+    -- reset margins and text width
+    clear_text_width_cache()
+    reset_video_margins()
+
+    clear_elements()
+    -- tracks may have changed (this runs on every re-init, e.g. track-list
+    -- updates), so drop cached track tooltip labels
+    clear_track_tooltip_cache()
+
+    -- build all elements (grouped into per-concern factories, see above)
+    create_window_control_buttons()
+    create_title_elements()
+    create_playback_controls()
+    create_track_buttons()
+    create_volume_controls()
+    create_zoom_controls()
+    create_side_buttons()
+    create_speed_menu_elements()
+    create_seekbar_elements()
 
     -- load layout
     if state.is_image then

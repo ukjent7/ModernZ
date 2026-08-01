@@ -24,6 +24,15 @@ local request_init = core.request_init
 local _constants = require("modules.constants")
 local window_control_box_width = _constants.window_control_box_width
 local DEFAULT_SPEED_PRESETS = _constants.DEFAULT_SPEED_PRESETS
+local SIDE_BUTTON_MARGIN = _constants.SIDE_BUTTON_MARGIN
+local SIDE_BUTTON_STEP = _constants.SIDE_BUTTON_STEP
+local SIDE_BUTTON_STEP_MINI = _constants.SIDE_BUTTON_STEP_MINI
+local BUTTON_SIZE = _constants.BUTTON_SIZE
+local MID_BUTTON_W = _constants.MID_BUTTON_W
+local MID_BUTTON_H = _constants.MID_BUTTON_H
+local PLAY_PAUSE_W = _constants.PLAY_PAUSE_W
+local PLAY_PAUSE_H = _constants.PLAY_PAUSE_H
+local CENTER_BUTTON_GAP = _constants.CENTER_BUTTON_GAP
 local _string_utils = require("modules.string_utils")
 local contains = _string_utils.contains
 local _styles = require("modules.styles")
@@ -38,21 +47,17 @@ local layouts = {}
 -- Reference stays valid: elements is rebuilt in place by prepare_elements().
 local elements = get_elements()
 
--- Layout build state. Only one layout runs per osc_init, so these module-level
--- slots (written by the layout and its shared helpers) are safe to reuse.
-local lo
-local refY
-local outeroffset
-
 -- Initializes the canvas geometry, bottom margin, and input/showhide areas for
--- a layout. Returns posX, posY, refX, refY and sets the module-level refY.
+-- a layout. Returns posX, posY, refX, refY. Layout state (refY, button
+-- positions, offsets) is passed between helpers as explicit parameters rather
+-- than shared module-level upvalues, so layout functions stay re-entrant and
+-- independently testable (see CODE_REVIEW 2.2).
 local function begin_osc_layout(osc_h)
     local osc_geo = { w = osc_param.playresx, h = osc_h }
     osc_param.video_margins.b = osc_geo.h / osc_param.playresy
 
     -- origin of the controllers, left/bottom corner
     local posX, posY = 0, osc_param.playresy
-    refY = posY
 
     osc_param.areas = {} -- delete areas
 
@@ -67,19 +72,23 @@ local function begin_osc_layout(osc_h)
 end
 
 -- Returns left/right side-button layout helpers sharing a position table.
--- cfg: {style, step, row_y, adjust_left, adjust_right, h, pos}. The helpers
--- step pos.left/pos.right outward, so call order matters. Left supports an
--- extra visibility condition (vis_extra) and a per-call step override.
-local function make_side_buttons(cfg)
+-- cfg: {style, step, row_y, adjust_left, adjust_right, h, pos, outeroffset}.
+-- The helpers step pos.left/pos.right outward, so call order matters. Left
+-- supports an extra visibility condition (vis_extra) and a per-call step
+-- override. Both return the layout (or nil when hidden) so callers can tweak
+-- it afterwards (e.g. the cache_info button).
+local function make_side_buttons(cfg, refY)
+    local outeroffset = cfg.outeroffset or 0
     local function left(name, min_w, w, step, style, vis_extra)
         local vis = (osc_param.playresx >= (cfg.adjust_left and min_w - outeroffset or min_w))
             and (vis_extra == nil or vis_extra)
         elements[name].visible = vis
         if vis then
-            lo = add_layout(name)
-            lo.geometry = {x = cfg.pos.left, y = refY - cfg.row_y, an = 5, w = w or 24, h = cfg.h or 24}
+            local lo = add_layout(name)
+            lo.geometry = {x = cfg.pos.left, y = refY - cfg.row_y, an = 5, w = w or BUTTON_SIZE, h = cfg.h or BUTTON_SIZE}
             lo.style = style or cfg.style
             cfg.pos.left = cfg.pos.left + (step or cfg.step)
+            return lo
         end
     end
     local function right(name, min_w, vis_extra, style, w)
@@ -87,10 +96,11 @@ local function make_side_buttons(cfg)
             and (vis_extra == nil or vis_extra)
         elements[name].visible = vis
         if vis then
-            lo = add_layout(name)
-            lo.geometry = {x = cfg.pos.right, y = refY - cfg.row_y, an = 5, w = w or 24, h = cfg.h or 24}
+            local lo = add_layout(name)
+            lo.geometry = {x = cfg.pos.right, y = refY - cfg.row_y, an = 5, w = w or BUTTON_SIZE, h = cfg.h or BUTTON_SIZE}
             lo.style = style or cfg.style
             cfg.pos.right = cfg.pos.right - cfg.step
+            return lo
         end
     end
     return left, right
@@ -108,12 +118,12 @@ local THRESHOLD = {
 
 -- Builds the volume bar (bg + bar + vol_ctrl hover box) at the given row and
 -- advances pos.left past the bar. row_y is the row offset from the bottom edge.
-local function setup_volumebar(pos, row_y, vol_vis, hover_pad)
+local function setup_volumebar(refY, pos, row_y, vol_vis, hover_pad)
     local ne = new_element("volumebarbg", "box")
     ne.visible = vol_vis
     elements["volumebar"].visible = vol_vis
     if vol_vis then
-        lo = add_layout("volumebarbg")
+        local lo = add_layout("volumebarbg")
         lo.geometry = {x = pos.left, y = refY - row_y, an = 4, w = 55, h = 4}
         lo.layer = 15
         lo.alpha[1] = 128
@@ -140,12 +150,12 @@ end
 -- Shared title/chapter_title layout boilerplate. Each layout supplies the
 -- geometry numbers that differ (widths and horizontal origins); everything
 -- else (clipping, layers, alpha, max-width bookkeeping) is identical.
-local function setup_title_and_chapter(title_y, title_w, title_x, chapter_title_y, chapter_title_w, chapter_title_x)
+local function setup_title_and_chapter(refY, title_y, title_w, title_x, chapter_title_y, chapter_title_w, chapter_title_x)
     state.title_max_w = title_w
     if title_w < 0 then title_w = 0 end
     elements["title"].visible = user_opts.show_title
     local geo = {x = title_x, y = refY - title_y, an = 1, w = title_w, h = user_opts.title_font_size}
-    lo = add_layout("title")
+    local lo = add_layout("title")
     lo.geometry = geo
     lo.layer = 48
     lo.alpha[3] = 0
@@ -466,7 +476,7 @@ local function layout_speed_menu()
 end
 
 -- Default layout
-layouts["default"] = function ()
+layouts["default"] = function()
     local no_title = not user_opts.show_title
     local no_chapter = not user_opts.show_chapter_title
     local chapter_index = user_opts.show_chapter_title and (state.chapter or -1) >= 0
@@ -479,7 +489,7 @@ layouts["default"] = function ()
     local title_and_chapter_h_with_offset = chapter_h + chapter_offset + title_h + title_offset
 
     local chapter_skip_buttons = user_opts.chapter_skip_buttons and next(state.chapter_list) ~= nil
-    outeroffset = (chapter_skip_buttons and 0 or 100) + (user_opts.jump_buttons and 0 or 100)
+    local outeroffset = (chapter_skip_buttons and 0 or 100) + (user_opts.jump_buttons and 0 or 100)
 
     if title_and_chapter_h_with_offset == 0 then
         -- add some top padding if both title and chapter aren't displayed
@@ -506,7 +516,7 @@ layouts["default"] = function ()
     local ontop_button = user_opts.ontop_button and not (window_controls_enabled() and user_opts.ontop_in_topbar and state.ontop)
     local playlist_button = user_opts.playlist_button and (not user_opts.hide_empty_playlist_button or state.playlist_count > 1)
 
-    local offset = user_opts.jump_buttons and 60 or 0
+    local offset = user_opts.jump_buttons and CENTER_BUTTON_GAP or 0
     local narrow_win = osc_param.playresx < (
         user_opts.portrait_window_trigger
         - outeroffset
@@ -528,17 +538,18 @@ layouts["default"] = function ()
     -- osc title + chapter title
     local title_w = (no_chapter or not chapter_index or user_opts.chapter_above_title) and (osc_param.playresx - 60 - time_codes_width) or (osc_param.playresx - 50)
     local chapter_title_w = narrow_win and (osc_param.playresx - time_codes_width - 60) or (osc_param.playresx - 60)
-    setup_title_and_chapter(title_y, title_w, 25, chapter_title_y, chapter_title_w, 26)
+    setup_title_and_chapter(refY, title_y, title_w, 25, chapter_title_y, chapter_title_w, 26)
 
     -- left side buttons
-    local pos = {left = 37, right = osc_param.playresx - 37}
+    local pos = {left = SIDE_BUTTON_MARGIN, right = osc_param.playresx - SIDE_BUTTON_MARGIN}
     local left, right = make_side_buttons({
         style = osc_styles.control_3,
-        step = 45,
+        step = SIDE_BUTTON_STEP,
         row_y = user_opts.osc_height / 2,
         adjust_right = true,
         pos = pos,
-    })
+        outeroffset = outeroffset,
+    }, refY)
 
     if playlist_button then left("playlist", THRESHOLD.playlist) end
     if audio_track and user_opts.audio_tracks_button then left("audio_track", THRESHOLD.audio) end
@@ -547,7 +558,7 @@ layouts["default"] = function ()
     if audio_track and user_opts.volume_control then
         left("vol_ctrl", THRESHOLD.volume, nil, 20)
         local vol_vis = (osc_param.playresx >= user_opts.hide_volume_bar_trigger - outeroffset)
-        setup_volumebar(pos, user_opts.osc_height / 2, vol_vis, 12)
+        setup_volumebar(refY, pos, user_opts.osc_height / 2, vol_vis, 12)
     end
 
     -- time codes
@@ -571,7 +582,7 @@ layouts["default"] = function ()
         end
     end
     elements["time_codes"].visible = (state.duration or 0) > 0
-    lo = add_layout("time_codes")
+    local lo = add_layout("time_codes")
     lo.geometry = {x = (narrow_win and (osc_param.playresx - 25) or time_codes_x), y = refY - time_codes_y, an = (narrow_win and 3 or 4), w = time_codes_width, h = user_opts.time_font_size}
     lo.layer = 48
     lo.alpha[3] = 0
@@ -581,44 +592,44 @@ layouts["default"] = function ()
     if user_opts.track_nextprev_buttons then
         elements["playlist_prev"].visible = (state.playlist_count > 1 or contains(user_opts.buttons_always_active, "playlist_prev")) and (osc_param.playresx >= THRESHOLD.prevnext - outeroffset)
         lo = add_layout("playlist_prev")
-        lo.geometry = {x = refX - (60 + (chapter_skip_buttons and 60 or 0)) - offset, y = refY - (user_opts.osc_height / 2), an = 5, w = 30, h = 24}
+        lo.geometry = {x = refX - (CENTER_BUTTON_GAP + (chapter_skip_buttons and CENTER_BUTTON_GAP or 0)) - offset, y = refY - (user_opts.osc_height / 2), an = 5, w = MID_BUTTON_W, h = MID_BUTTON_H}
         lo.style = osc_styles.control_2
     end
 
     if chapter_skip_buttons then
         elements["chapter_prev"].visible = osc_param.playresx >= THRESHOLD.chapter - outeroffset
         lo = add_layout("chapter_prev")
-        lo.geometry = {x = refX - 60 - offset, y = refY - (user_opts.osc_height / 2), an = 5, w = 30, h = 24}
+        lo.geometry = {x = refX - CENTER_BUTTON_GAP - offset, y = refY - (user_opts.osc_height / 2), an = 5, w = MID_BUTTON_W, h = MID_BUTTON_H}
         lo.style = osc_styles.control_2
     end
 
     if user_opts.jump_buttons then
         lo = add_layout("jump_backward")
-        lo.geometry = {x = refX - 60, y = refY - (user_opts.osc_height / 2), an = 5, w = 30, h = 24}
+        lo.geometry = {x = refX - CENTER_BUTTON_GAP, y = refY - (user_opts.osc_height / 2), an = 5, w = MID_BUTTON_W, h = MID_BUTTON_H}
         lo.style = osc_styles.control_2
     end
 
     lo = add_layout("play_pause")
-    lo.geometry = {x = refX, y = refY - (user_opts.osc_height / 2), an = 5, w = 45, h = 28}
+    lo.geometry = {x = refX, y = refY - (user_opts.osc_height / 2), an = 5, w = PLAY_PAUSE_W, h = PLAY_PAUSE_H}
     lo.style = osc_styles.control_1
 
     if user_opts.jump_buttons then
         lo = add_layout("jump_forward")
-        lo.geometry = {x = refX + 60, y = refY - (user_opts.osc_height / 2), an = 5, w = 30, h = 24}
+        lo.geometry = {x = refX + CENTER_BUTTON_GAP, y = refY - (user_opts.osc_height / 2), an = 5, w = MID_BUTTON_W, h = MID_BUTTON_H}
         lo.style = osc_styles.control_2
     end
 
     if chapter_skip_buttons then
         elements["chapter_next"].visible = osc_param.playresx >= THRESHOLD.chapter - outeroffset
         lo = add_layout("chapter_next")
-        lo.geometry = {x = refX + 60 + offset, y = refY - (user_opts.osc_height / 2), an = 5, w = 30, h = 24}
+        lo.geometry = {x = refX + CENTER_BUTTON_GAP + offset, y = refY - (user_opts.osc_height / 2), an = 5, w = MID_BUTTON_W, h = MID_BUTTON_H}
         lo.style = osc_styles.control_2
     end
 
     if user_opts.track_nextprev_buttons then
         elements["playlist_next"].visible = (state.playlist_count > 1 or contains(user_opts.buttons_always_active, "playlist_next")) and (osc_param.playresx >= THRESHOLD.prevnext - outeroffset)
         lo = add_layout("playlist_next")
-        lo.geometry = {x = refX + (60 + (chapter_skip_buttons and 60 or 0)) + offset, y = refY - (user_opts.osc_height / 2), an = 5, w = 30, h = 24}
+        lo.geometry = {x = refX + (CENTER_BUTTON_GAP + (chapter_skip_buttons and CENTER_BUTTON_GAP or 0)) + offset, y = refY - (user_opts.osc_height / 2), an = 5, w = MID_BUTTON_W, h = MID_BUTTON_H}
         lo.style = osc_styles.control_2
     end
 
@@ -633,17 +644,21 @@ layouts["default"] = function ()
     right("download", THRESHOLD.download, state.is_url and user_opts.download_button)
 
     if user_opts.cache_info then
-        right("cache_info", THRESHOLD.cache, user_opts.cache_info, osc_styles.cache, user_opts.cache_info_speed and 70 or 45)
-        lo.geometry.x  = lo.geometry.x + 7
-        lo.geometry.an = 6
-        lo.alpha[3] = 0
+        -- note: lo is nil when the button is hidden by the width threshold;
+        -- the tweaks below only apply when it was actually laid out
+        local lo = right("cache_info", THRESHOLD.cache, user_opts.cache_info, osc_styles.cache, user_opts.cache_info_speed and 70 or 45)
+        if lo then
+            lo.geometry.x  = lo.geometry.x + 7
+            lo.geometry.an = 6
+            lo.alpha[3] = 0
+        end
     end
 
     -- speed menu panel (YouTube-style)
     layout_speed_menu()
 end
 
-layouts["compact"] = function ()
+layouts["compact"] = function()
     local chapter_index = (state.chapter or -1) >= 0
     local no_title = not user_opts.show_title
     local no_chapter = not user_opts.show_chapter_title
@@ -679,16 +694,16 @@ layouts["compact"] = function ()
     end
 
     -- osc title + chapter title
-    setup_title_and_chapter(title_y, osc_param.playresx - 50, 25, chapter_title_y, osc_param.playresx - 60, 25)
+    setup_title_and_chapter(refY, title_y, osc_param.playresx - 50, 25, chapter_title_y, osc_param.playresx - 60, 25)
 
     -- left side buttons
-    local pos = {left = 37, right = osc_param.playresx - 37}
+    local pos = {left = SIDE_BUTTON_MARGIN, right = osc_param.playresx - SIDE_BUTTON_MARGIN}
     local left, right = make_side_buttons({
         style = osc_styles.control_2,
-        step = 45,
+        step = SIDE_BUTTON_STEP,
         row_y = user_opts.osc_height / 2,
         pos = pos,
-    })
+    }, refY)
 
     left("play_pause", 200)
 
@@ -708,7 +723,7 @@ layouts["compact"] = function ()
     if state.audio_track_count > 0 and user_opts.volume_control then
         left("vol_ctrl", 800, nil, 20)
         local vol_vis = osc_param.playresx >= 900
-        setup_volumebar(pos, user_opts.osc_height / 2, vol_vis, 12)
+        setup_volumebar(refY, pos, user_opts.osc_height / 2, vol_vis, 12)
     end
 
     -- right side buttons
@@ -723,7 +738,7 @@ layouts["compact"] = function ()
     -- time codes
     local time_codes_width = get_time_codes_width(osc_styles.time)
     elements["time_codes"].visible = (state.duration or 0) > 0
-    lo = add_layout("time_codes")
+    local lo = add_layout("time_codes")
     lo.geometry = {x = pos.right + 20, y = refY - (user_opts.osc_height / 2), an = 6, w = time_codes_width, h = 20}
     lo.layer = 48
     lo.alpha[3] = 0
@@ -733,7 +748,7 @@ layouts["compact"] = function ()
     layout_speed_menu()
 end
 
-layouts["mini"] = function ()
+layouts["mini"] = function()
     local osc_height = 30
     local first_row_y = 25
     local second_row_y = 25
@@ -749,14 +764,14 @@ layouts["mini"] = function ()
     setup_seekbar(refX, refY, refY - first_row_y - second_row_y)
 
     -- left side buttons
-    local pos = {left = 37, right = osc_param.playresx - 37}
+    local pos = {left = SIDE_BUTTON_MARGIN, right = osc_param.playresx - SIDE_BUTTON_MARGIN}
     local left, right = make_side_buttons({
         style = osc_styles.control_mini,
-        step = 35,
+        step = SIDE_BUTTON_STEP_MINI,
         row_y = first_row_y,
         h = 20,
         pos = pos,
-    })
+    }, refY)
 
     left("play_pause", 200)
 
@@ -776,7 +791,7 @@ layouts["mini"] = function ()
     if state.audio_track_count > 0 and user_opts.volume_control then
         left("vol_ctrl", 500, nil, 20)
         local vol_vis = osc_param.playresx >= 650
-        setup_volumebar(pos, first_row_y, vol_vis, 10)
+        setup_volumebar(refY, pos, first_row_y, vol_vis, 10)
     end
 
     -- right side buttons
@@ -791,7 +806,7 @@ layouts["mini"] = function ()
     -- time codes
     local time_codes_width = get_time_codes_width(osc_styles.time)
     elements["time_codes"].visible = (state.duration or 0) > 0
-    lo = add_layout("time_codes")
+    local lo = add_layout("time_codes")
     lo.geometry = {x = pos.right, y = refY - first_row_y, an = 6, w = time_codes_width, h = 20}
     lo.layer = 48
     lo.alpha[3] = 0
@@ -801,7 +816,7 @@ layouts["mini"] = function ()
     layout_speed_menu()
 end
 
-layouts["seekbar"] = function ()
+layouts["seekbar"] = function()
     local osc_height = 30
     local first_row_y = 25
     local second_row_y = 15
@@ -819,14 +834,14 @@ layouts["seekbar"] = function ()
     -- time codes
     local time_codes_width = get_time_codes_width(osc_styles.time)
     elements["time_codes"].visible = (state.duration or 0) > 0
-    lo = add_layout("time_codes")
+    local lo = add_layout("time_codes")
     lo.geometry = {x = osc_param.playresx - 25, y = refY - first_row_y - second_row_y, an = 3, w = time_codes_width, h = user_opts.time_font_size}
     lo.layer = 48
     lo.alpha[3] = 0
     lo.style = osc_styles.time
 end
 
-layouts["modern-image"] = function ()
+layouts["modern-image"] = function()
     local posX, posY, refX, refY = begin_osc_layout(50)
 
     -- osc background
@@ -844,18 +859,18 @@ layouts["modern-image"] = function ()
     -- local helper; right side buttons use the shared factory.
     local function left_side_button(name, x, min_w, w, style)
         elements[name].visible = osc_param.playresx >= min_w
-        lo = add_layout(name)
-        lo.geometry = {x = x, y = refY - (user_opts.osc_height / 2), an = 5, w = w or 24, h = 24}
+        local lo = add_layout(name)
+        lo.geometry = {x = x, y = refY - (user_opts.osc_height / 2), an = 5, w = w or BUTTON_SIZE, h = BUTTON_SIZE}
         lo.style = style or osc_styles.control_2
     end
 
-    local pos = {left = 37, right = osc_param.playresx - 37}
+    local pos = {left = SIDE_BUTTON_MARGIN, right = osc_param.playresx - SIDE_BUTTON_MARGIN}
     local _, right = make_side_buttons({
         style = osc_styles.control_3,
-        step = 45,
+        step = SIDE_BUTTON_STEP,
         row_y = user_opts.osc_height / 2,
         pos = pos,
-    })
+    }, refY)
 
     -- left side
     if playlist_button then left_side_button("playlist", 25, 250, nil, osc_styles.control_3) end
@@ -873,7 +888,7 @@ layouts["modern-image"] = function ()
 
         ne = new_element("zoom_control_bg", "box")
         ne.visible = zoom_vis
-        lo = add_layout("zoom_control_bg")
+        local lo = add_layout("zoom_control_bg")
         lo.geometry = {x = zx + 25, y = refY - (user_opts.osc_height / 2), an = 4, w = 80, h = 4}
         lo.layer = 15
         lo.alpha[1] = 128

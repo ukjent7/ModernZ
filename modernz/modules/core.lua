@@ -18,6 +18,18 @@ local osc_param = {
     },
 }
 
+-- create_osd_overlay can fail (rare) or return nil; guard both so the
+-- downstream set_osd()/render_wipe() calls never trip over a nil overlay
+-- (see CODE_REVIEW 7.3).
+local function create_osd_overlay()
+    local ok, osd = pcall(mp.create_osd_overlay, "ass-events")
+    if not ok or not osd then
+        msg.error("core.lua: failed to create OSD overlay: " .. tostring(osd))
+        return nil
+    end
+    return osd
+end
+
 -- Thumbfast thumbnail state (updated via script-message, read by rendering/events)
 local thumbfast = {
     width = 0,
@@ -42,6 +54,9 @@ local state = {
     anistart = nil,
     anitype = nil,
     animation = nil,
+    -- Counts ticks while the mouse button is held over an element. Reset in
+    -- events.lua on mouse-up; consumed by rendering.lua to style held buttons,
+    -- drive softrepeat, and force the seek tooltip during drags (see CODE_REVIEW 4.3).
     mouse_down_counter = 0,
     active_element = nil,
     active_event_source = nil,
@@ -78,9 +93,14 @@ local state = {
     windowcontrols_ontop = false,
     dmx_cache = 0,
     border = true,
+    -- Initialised to match the mpv default; the "title-bar" observer in
+    -- main.lua overwrites it with the real value. Without this, an "auto"
+    -- window_top_bar would briefly assume the title bar is missing and flash
+    -- the window controls before the first callback arrives (see CODE_REVIEW 7.1).
+    title_bar = true,
     window_maximized = false,
-    osd = mp.create_osd_overlay("ass-events"),
-    logo_osd = mp.create_osd_overlay("ass-events"),
+    osd = create_osd_overlay(),
+    logo_osd = create_osd_overlay(),
     keeponpause_active = false,
     keeponpause_restore = nil,
     duration = nil,

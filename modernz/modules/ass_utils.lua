@@ -11,11 +11,16 @@ local _styles = require("modules.styles")
 local osc_styles = _styles.get_osc_styles()
 local _locale = require("modules.locale")
 local bidi = _locale.bidi
+local _constants = require("modules.constants")
+local TOOLTIP_PAD_H = _constants.TOOLTIP_PAD_H
+local TOOLTIP_PAD_V = _constants.TOOLTIP_PAD_V
 
--- multiplies two alpha values, formular can probably be improved
--- rounded to an integer: the result feeds into string.format("%X", ...) below,
--- which requires an integer representation (Lua 5.4 errors on fractional
--- floats), and ASS alpha is an 8-bit value anyway.
+-- Multiplies two alpha values. This is the standard Porter-Duff "over"
+-- compositing formula for the alpha channel: it yields the alpha of (a drawn
+-- over b), which is exactly what stacking two ASS layers needs (see
+-- CODE_REVIEW 7.6). Rounded to an integer: the result feeds into
+-- string.format("%X", ...) below, which requires an integer representation
+-- (Lua 5.4 errors on fractional floats), and ASS alpha is an 8-bit value anyway.
 local function mult_alpha(alphaA, alphaB)
     return math.floor(255 - (((1-(alphaA/255)) * (1-(alphaB/255))) * 255) + 0.5)
 end
@@ -41,7 +46,7 @@ end
 -- draw tooltip background box and label
 local function draw_tooltip(ass, tx, ty, width, style, label, alpha)
     local fs = user_opts.tooltip_font_size
-    local ph, pv = 5, 3
+    local ph, pv = TOOLTIP_PAD_H, TOOLTIP_PAD_V
     local box_h = fs + 2 * pv
     local min_w = box_h + 2 * ph
     local box_w = math.max(width + 2 * ph, min_w)

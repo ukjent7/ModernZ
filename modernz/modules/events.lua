@@ -238,8 +238,23 @@ local function set_input_areas(click, wheel, mid)
     set("input_mid", mid)
 end
 
+-- Throttle for refresh_input_area(): it runs on every mouse_move and every
+-- render tick, but the input areas can only change when the cursor moved or
+-- the relevant UI state (drag target / speed menu / OSC visibility) flipped.
+-- Skipping the element walk when nothing changed keeps mousemove cost flat
+-- (see CODE_REVIEW 4.2). The key is reset after osc_init() (handle_init_request)
+-- because a new layout can move elements under a stationary cursor.
+local last_input_key = nil
 local function refresh_input_area()
-    if not state.osc_visible then
+    local visible = state.osc_visible
+    local mouseX, mouseY = get_virt_mouse_pos()
+    local key = string.format("%d|%.3f|%.3f|%s|%s",
+        visible and 1 or 0, mouseX, mouseY,
+        tostring(state.active_element), tostring(state.speed_menu_open))
+    if key == last_input_key then return end
+    last_input_key = key
+
+    if not visible then
         set_input_areas()
         return
     end
@@ -299,6 +314,13 @@ local function process_event(source, what)
     if what == "down" or what == "press" then
         reset_timeout() -- clicking resets the hideosc timer
 
+        -- Iterate from the lowest layer up: later hits overwrite
+        -- active_element, so the element that ends up stored is the topmost
+        -- one under the cursor (elements is layer-sorted ascending, see
+        -- elements.prepare_elements). The loop intentionally fires the
+        -- down/press handler of *every* hit element — e.g. the speed menu
+        -- backdrop (layer 60) and a panel button (layers 62-63) both react
+        -- to the same click (see CODE_REVIEW 4.1).
         for n = 1, #elements do
             if mouse_hit(elements[n]) and
                 elements[n].eventresponder and
@@ -399,12 +421,9 @@ local function enable_osc(enable)
     end
 end
 
-local function render()
-    msg.trace("rendering")
+local function check_display_change()
     local current_screen_sizeX = state.osd_dimensions.w
     local current_screen_sizeY = state.osd_dimensions.h
-    local mouseX, mouseY = get_virt_mouse_pos()
-    local now = mp.get_time()
 
     -- check if display changed, if so request reinit
     if state.screen_sizeX ~= current_screen_sizeX or state.screen_sizeY ~= current_screen_sizeY then
@@ -413,8 +432,12 @@ local function render()
         state.screen_sizeX = current_screen_sizeX
         state.screen_sizeY = current_screen_sizeY
     end
+end
 
-    -- init management
+-- osc_init() must not run while the mouse is held down: recreating the
+-- elements mid-drag breaks the active_element index tracking between
+-- mouse-down and mouse-up (see CODE_REVIEW 4.4).
+local function handle_init_request(mouseX, mouseY)
     if state.active_element then
         -- mouse is held down on some element - keep ticking and ignore initReq
         -- till it's released, or else the mouse-up (click) will misbehave or
@@ -426,39 +449,43 @@ local function render()
         osc_init()
         state.initREQ = false
 
+        -- the layout may have changed; force the input-area throttle to
+        -- recompute against the new element geometry
+        last_input_key = nil
+
         -- store initial mouse position
         if (state.last_mouseX == nil or state.last_mouseY == nil) and not (mouseX == nil or mouseY == nil or mouseX == -1 or mouseY == -1) then
             state.last_mouseX, state.last_mouseY = mouseX, mouseY
         end
     end
+end
 
-    -- fade animation
-    local function run_fade(anitype_key, anistart_key, animation_key, set_visible)
-        local anitype = state[anitype_key]
-        if anitype == nil then
-            kill_animation(anitype_key, anistart_key, animation_key)
-            return
-        end
-        if state[anistart_key] == nil then state[anistart_key] = now end
-        local fadelen = user_opts.fadeduration / 1000
-        if now < state[anistart_key] + fadelen then
-            if anitype == "in" then
-                set_visible(true)
-                state[animation_key] = scale_value(state[anistart_key],
-                    state[anistart_key] + fadelen, 255, 0, now)
-            elseif anitype == "out" then
-                state[animation_key] = scale_value(state[anistart_key],
-                    state[anistart_key] + fadelen, 0, 255, now)
-            end
-        else
-            if anitype == "out" then set_visible(false) end
-            kill_animation(anitype_key, anistart_key, animation_key)
-        end
+local function run_fade(anitype_key, anistart_key, animation_key, set_visible)
+    local now = mp.get_time()
+    local anitype = state[anitype_key]
+    if anitype == nil then
+        kill_animation(anitype_key, anistart_key, animation_key)
+        return
     end
-    run_fade("anitype",    "anistart",    "animation",    osc_visible)
-    run_fade("wc_anitype", "wc_anistart", "wc_animation", wc_visible)
+    if state[anistart_key] == nil then state[anistart_key] = now end
+    local fadelen = user_opts.fadeduration / 1000
+    if now < state[anistart_key] + fadelen then
+        if anitype == "in" then
+            set_visible(true)
+            state[animation_key] = scale_value(state[anistart_key],
+                state[anistart_key] + fadelen, 255, 0, now)
+        elseif anitype == "out" then
+            state[animation_key] = scale_value(state[anistart_key],
+                state[anistart_key] + fadelen, 0, 255, now)
+        end
+    else
+        if anitype == "out" then set_visible(false) end
+        kill_animation(anitype_key, anistart_key, animation_key)
+    end
+end
 
-    --mouse show/hide area
+-- sync the show/hide cursor areas (bottom bar / window controls bar)
+local function update_showhide_areas()
     -- areas can be empty before the first osc_init() has laid out the bars;
     -- guard the table so a tick never trips over pairs(nil)
     for _, cords in pairs(osc_param.areas["showhide"] or {}) do
@@ -472,22 +499,25 @@ local function render()
         set_virt_mouse_area(0, 0, 0, 0, "showhide_wc")
     end
     do_enable_keybindings()
+end
 
-    --mouse input area
-    local function update_input_area(area_name, visible, enabled_key, enable_fn)
-        local areas = osc_param.areas[area_name]
-        if not areas then return end
-        for _, cords in ipairs(areas) do
-            if visible then
-                set_virt_mouse_area(cords.x1, cords.y1, cords.x2, cords.y2, area_name)
-            end
-            if visible ~= state[enabled_key] then
-                if visible then enable_fn() else mp.disable_key_bindings(area_name) end
-                state[enabled_key] = visible
-            end
+-- enable/disable the click-capture binding section for the given area
+local function update_input_area(area_name, visible, enabled_key, enable_fn)
+    local areas = osc_param.areas[area_name]
+    if not areas then return end
+    for _, cords in ipairs(areas) do
+        if visible then
+            set_virt_mouse_area(cords.x1, cords.y1, cords.x2, cords.y2, area_name)
+        end
+        if visible ~= state[enabled_key] then
+            if visible then enable_fn() else mp.disable_key_bindings(area_name) end
+            state[enabled_key] = visible
         end
     end
+end
 
+-- sync the click-capture areas to the current bar visibility
+local function update_click_areas()
     -- sync input area to cursor position
     if state.osc_visible ~= state.input_enabled then
         if state.osc_visible then
@@ -507,30 +537,52 @@ local function render()
     -- of triggering mpv's default bindings. Do not add bindings to it.
     update_input_area("window-controls-title", state.wc_visible, "windowcontrols_title", function() mp.enable_key_bindings("window-controls-title", "allow-vo-dragging") end)
     update_input_area("window-controls-ontop", state.wc_visible, "windowcontrols_ontop", function() mp.enable_key_bindings("window-controls-ontop") end)
+end
 
-    -- autohide
-    local function run_autohide(showtime_key, hide_fn, input_areas)
-        local hide_timeout = get_hidetimeout()
-        if state[showtime_key] == nil or hide_timeout < 0 then return end
-        local timeout = state[showtime_key] + (hide_timeout / 1000) - now
-        if timeout <= 0 and get_touchtimeout() <= 0 then
-            -- a hold in the bottom bar should not prevent the top bar from hiding, and vice versa.
-            local element_blocks_hide = state.active_element ~= nil and mouse_in_area(input_areas)
-            if not element_blocks_hide and (not user_opts.keep_with_cursor or not mouse_in_area(input_areas)) then
-                hide_fn()
-            end
-        else
-            if not state.hide_timer then
-                state.hide_timer = mp.add_timeout(0, tick)
-            end
-            if timeout < state.hide_timer.timeout then
-                state.hide_timer.timeout = timeout
-                state.hide_timer:kill()
-                state.hide_timer:resume()
-            end
+local function run_autohide(showtime_key, hide_fn, input_areas)
+    local now = mp.get_time()
+    local hide_timeout = get_hidetimeout()
+    if state[showtime_key] == nil or hide_timeout < 0 then return end
+    local timeout = state[showtime_key] + (hide_timeout / 1000) - now
+    if timeout <= 0 and get_touchtimeout() <= 0 then
+        -- a hold in the bottom bar should not prevent the top bar from hiding, and vice versa.
+        local element_blocks_hide = state.active_element ~= nil and mouse_in_area(input_areas)
+        if not element_blocks_hide and (not user_opts.keep_with_cursor or not mouse_in_area(input_areas)) then
+            hide_fn()
+        end
+    else
+        if not state.hide_timer then
+            state.hide_timer = mp.add_timeout(0, tick)
+        end
+        if timeout < state.hide_timer.timeout then
+            state.hide_timer.timeout = timeout
+            state.hide_timer:kill()
+            state.hide_timer:resume()
         end
     end
+end
 
+-- tick entry point. Each concern lives in its own helper (display change,
+-- init management, fade animation, show/hide areas, click areas, autohide
+-- timers, submission) instead of one long function (see CODE_REVIEW 4.4).
+local function render()
+    msg.trace("rendering")
+    local mouseX, mouseY = get_virt_mouse_pos()
+
+    check_display_change()
+    handle_init_request(mouseX, mouseY)
+
+    -- fade animation
+    run_fade("anitype",    "anistart",    "animation",    osc_visible)
+    run_fade("wc_anitype", "wc_anistart", "wc_animation", wc_visible)
+
+    -- mouse show/hide areas
+    update_showhide_areas()
+
+    -- mouse input areas
+    update_click_areas()
+
+    -- autohide
     local osc_areas = {"input"}
     local wc_areas  = {"window-controls", "window-controls-title", "window-controls-ontop"}
     if not user_opts.windowcontrols_independent then

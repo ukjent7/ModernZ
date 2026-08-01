@@ -18,9 +18,11 @@ local _geometry_utils = require("modules.geometry_utils")
 local get_hitbox_coords = _geometry_utils.get_hitbox_coords
 local _ass_utils = require("modules.ass_utils")
 local ass_draw_rr_h_cw = _ass_utils.ass_draw_rr_h_cw
+local _constants = require("modules.constants")
+local SLIDER_HITBOX_PAD = _constants.SLIDER_HITBOX_PAD
 
 -- Sliders whose hitbox gets extra vertical padding beyond the layout height.
-local SLIDER_HITBOX_PAD = { volumebar = true, zoom_control = true, speed_slider = true }
+local PADDED_SLIDERS = { volumebar = true, zoom_control = true, speed_slider = true }
 
 -- Private elements table, owned by this module
 local elements = {}
@@ -36,13 +38,19 @@ local function prepare_elements()
     for k in pairs(elements) do elements[k] = nil end
     for i = 1, #elements2 do elements[i] = elements2[i] end
 
-    local function elem_compare (a, b)
-        return a.layout.layer < b.layout.layer
+    local function elem_compare(a, b)
+        if a.layout.layer ~= b.layout.layer then
+            return a.layout.layer < b.layout.layer
+        end
+        -- Lua 5.1's table.sort is not stable; tie-break on the element name so
+        -- equal-layer elements keep a deterministic z-order across re-inits
+        -- (see CODE_REVIEW 7.4).
+        return (a.name or "") < (b.name or "")
     end
 
     table.sort(elements, elem_compare)
 
-    for _,element in pairs(elements) do
+    for _, element in ipairs(elements) do
 
         local elem_geo = element.layout.geometry
 
@@ -55,7 +63,7 @@ local function prepare_elements()
         end
 
         -- Calculate the hitbox
-        local hitbox_h = elem_geo.h + (SLIDER_HITBOX_PAD[element.name] and 14 or 0)
+        local hitbox_h = elem_geo.h + (PADDED_SLIDERS[element.name] and SLIDER_HITBOX_PAD or 0)
         local bX1, bY1, bX2, bY2 = get_hitbox_coords(elem_geo.x, elem_geo.y, elem_geo.an, hitbox_w, hitbox_h)
         element.hitbox = {x1 = bX1, y1 = bY1, x2 = bX2, y2 = bY2}
 
@@ -119,6 +127,13 @@ end
 -- Element Rendering
 --
 
+-- Semantics of the two "disabled" flags (see CODE_REVIEW 3.2):
+--   * enabled = false -> the element cannot be interacted with (its
+--     eventresponders are removed, except on track buttons which keep them to
+--     display "nothing available" tooltips) and it is dimmed (alpha[1] = 215).
+--   * off = true      -> purely visual: the element is grayed out (alpha[1] =
+--     100) but stays fully interactive. Used e.g. for the playlist button
+--     when the playlist is empty but the button is kept visible.
 local function new_element(name, type)
     elements[name] = {}
     elements[name].type = type
